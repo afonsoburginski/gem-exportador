@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -38,12 +41,27 @@ jobs:
         run: ./gradlew packageMsi --no-daemon
         shell: bash
       
+      - name: List build output
+        run: |
+          echo "=== Listing MSI directory ==="
+          Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Recurse -ErrorAction SilentlyContinue
+          echo "=== Listing all binaries ==="
+          Get-ChildItem -Path "desktopApp/build/compose/binaries" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
+        shell: pwsh
+        continue-on-error: true
+      
       - name: Find MSI file
         id: find_msi
         run: |
-          $msi = Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Filter "*.msi" | Select-Object -First 1
-          echo "MSI_PATH=$($msi.FullName)" >> $env:GITHUB_OUTPUT
-          echo "MSI_NAME=$($msi.Name)" >> $env:GITHUB_OUTPUT
+          $msi = Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msi) {
+            echo "MSI_PATH=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+            echo "MSI_NAME=$($msi.Name)" >> $env:GITHUB_OUTPUT
+            echo "Found MSI: $($msi.FullName)"
+          } else {
+            echo "MSI not found!"
+            exit 1
+          }
         shell: pwsh
       
       - name: Create version.json
