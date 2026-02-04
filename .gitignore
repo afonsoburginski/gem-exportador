@@ -18,9 +18,9 @@ shared/shared.podspec
 .env
 .env.*
 
-# Banco de dados local e dados de processamento
-data/
-processados/
+# Banco de dados local e dados de processamento (apenas no root)
+/data/
+/processados/
 
 # Builds locais
 *.msi
