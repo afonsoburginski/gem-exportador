@@ -80,7 +80,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ${{ steps.find_msi.outputs.MSI_PATH }}
+            desktopApp/build/compose/binaries/main/msi/*.msi
             version.json
           generate_release_notes: true
           draft: false
