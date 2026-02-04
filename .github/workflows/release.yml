@@ -37,14 +37,14 @@ jobs:
           (Get-Content gradle.properties) -replace 'app.version=.*', "app.version=${{ steps.get_version.outputs.VERSION }}" | Set-Content gradle.properties
         shell: pwsh
       
-      - name: Build MSI
-        run: ./gradlew packageMsi --no-daemon
+      - name: Build MSI (Release com ProGuard)
+        run: ./gradlew packageReleaseMsi --no-daemon
         shell: bash
       
       - name: List build output
         run: |
-          echo "=== Listing MSI directory ==="
-          Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Recurse -ErrorAction SilentlyContinue
+          echo "=== Listing MSI directory (release) ==="
+          Get-ChildItem -Path "desktopApp/build/compose/binaries/main-release/msi" -Recurse -ErrorAction SilentlyContinue
           echo "=== Listing all binaries ==="
           Get-ChildItem -Path "desktopApp/build/compose/binaries" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
         shell: pwsh
@@ -53,7 +53,7 @@ jobs:
       - name: Find MSI file
         id: find_msi
         run: |
-          $msi = Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $msi = Get-ChildItem -Path "desktopApp/build/compose/binaries/main-release/msi" -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($msi) {
             echo "MSI_PATH=$($msi.FullName)" >> $env:GITHUB_OUTPUT
             echo "MSI_NAME=$($msi.Name)" >> $env:GITHUB_OUTPUT
@@ -80,7 +80,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            desktopApp/build/compose/binaries/main/msi/*.msi
+            desktopApp/build/compose/binaries/main-release/msi/*.msi
             version.json
           generate_release_notes: true
           draft: false

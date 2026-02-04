@@ -31,6 +31,13 @@ compose.desktop {
         jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
         jvmArgs("--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED")
 
+        buildTypes.release {
+            proguard {
+                configurationFiles.from(project.file("proguard-rules.pro"))
+                obfuscate.set(false) // Não ofuscar, só otimizar e shrink
+            }
+        }
+
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = appName
