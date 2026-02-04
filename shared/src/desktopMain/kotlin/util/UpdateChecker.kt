@@ -31,8 +31,8 @@ private data class GitHubAsset(
  */
 object UpdateChecker {
     // Configurar com o repositório correto
-    private const val GITHUB_OWNER = "jhonrob" // TODO: Alterar para o owner real
-    private const val GITHUB_REPO = "gem-exportador" // TODO: Alterar para o repo real
+    private const val GITHUB_OWNER = "afonsoburginski"
+    private const val GITHUB_REPO = "gem-exportador"
     
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
