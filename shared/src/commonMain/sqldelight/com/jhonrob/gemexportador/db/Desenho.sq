@@ -1,0 +1,64 @@
+-- Schema da tabela de desenhos
+CREATE TABLE desenho (
+    id TEXT NOT NULL PRIMARY KEY,
+    nome_arquivo TEXT NOT NULL,
+    computador TEXT NOT NULL,
+    caminho_destino TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pendente',
+    posicao_fila INTEGER,
+    horario_envio TEXT NOT NULL,
+    horario_atualizacao TEXT NOT NULL,
+    formatos_solicitados TEXT,
+    arquivo_original TEXT,
+    arquivos_processados TEXT,
+    erro TEXT,
+    progresso INTEGER NOT NULL DEFAULT 0,
+    tentativas INTEGER NOT NULL DEFAULT 0,
+    arquivos_enviados_para_usuario INTEGER NOT NULL DEFAULT 0,
+    cancelado_em TEXT,
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL,
+    pasta_processamento TEXT
+);
+
+-- Índices para performance
+CREATE INDEX idx_desenho_status ON desenho(status);
+CREATE INDEX idx_desenho_computador ON desenho(computador);
+CREATE INDEX idx_desenho_horario_envio ON desenho(horario_envio);
+
+-- Queries
+
+selectAll:
+SELECT * FROM desenho ORDER BY horario_envio DESC;
+
+selectById:
+SELECT * FROM desenho WHERE id = ?;
+
+selectByStatus:
+SELECT * FROM desenho WHERE status = ? ORDER BY horario_envio DESC;
+
+selectPendentesEProcessando:
+SELECT * FROM desenho WHERE status IN ('pendente', 'processando') ORDER BY posicao_fila ASC, horario_envio ASC;
+
+insert:
+INSERT OR REPLACE INTO desenho(
+    id, nome_arquivo, computador, caminho_destino, status, posicao_fila,
+    horario_envio, horario_atualizacao, formatos_solicitados, arquivo_original,
+    arquivos_processados, erro, progresso, tentativas, arquivos_enviados_para_usuario,
+    cancelado_em, criado_em, atualizado_em, pasta_processamento
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateStatus:
+UPDATE desenho SET status = ?, horario_atualizacao = ?, atualizado_em = ? WHERE id = ?;
+
+updateProgresso:
+UPDATE desenho SET progresso = ?, horario_atualizacao = ?, atualizado_em = ? WHERE id = ?;
+
+delete:
+DELETE FROM desenho WHERE id = ?;
+
+deleteAll:
+DELETE FROM desenho;
+
+countByStatus:
+SELECT status, COUNT(*) AS total FROM desenho GROUP BY status;

@@ -1,0 +1,71 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+      
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+        shell: bash
+      
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        shell: bash
+      
+      - name: Update version in gradle.properties
+        run: |
+          (Get-Content gradle.properties) -replace 'app.version=.*', "app.version=${{ steps.get_version.outputs.VERSION }}" | Set-Content gradle.properties
+        shell: pwsh
+      
+      - name: Build MSI
+        run: ./gradlew packageMsi --no-daemon
+        shell: bash
+      
+      - name: Find MSI file
+        id: find_msi
+        run: |
+          $msi = Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Filter "*.msi" | Select-Object -First 1
+          echo "MSI_PATH=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+          echo "MSI_NAME=$($msi.Name)" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+      
+      - name: Create version.json
+        run: |
+          @"
+          {
+            "version": "${{ steps.get_version.outputs.VERSION }}",
+            "downloadUrl": "https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/${{ steps.find_msi.outputs.MSI_NAME }}",
+            "releaseNotes": "Versao ${{ steps.get_version.outputs.VERSION }}",
+            "mandatory": false
+          }
+          "@ | Out-File -FilePath version.json -Encoding utf8
+        shell: pwsh
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ steps.find_msi.outputs.MSI_PATH }}
+            version.json
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

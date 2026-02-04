@@ -13,3 +13,29 @@ iosApp/iosApp.xcworkspace/*
 iosApp/iosApp.xcodeproj/*
 !iosApp/iosApp.xcodeproj/project.pbxproj
 shared/shared.podspec
+
+# Ambiente e credenciais
+.env
+.env.*
+
+# Banco de dados local e dados de processamento
+data/
+processados/
+
+# Builds locais
+*.msi
+*.exe
+*.dmg
+*.deb
+*.rpm
+
+# Node modules (qualquer pasta)
+**/node_modules/
+
+# Logs
+*.log
+logs/
+
+# Arquivos temporários
+*.tmp
+*.temp

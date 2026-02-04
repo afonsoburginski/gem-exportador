@@ -1,0 +1,338 @@
+package server.routes
+
+import io.ktor.http.*
+import io.ktor.server.application.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import io.ktor.server.websocket.*
+import io.ktor.http.content.*
+import io.ktor.websocket.*
+import kotlinx.serialization.Serializable
+import model.DesenhoAutodesk
+import server.broadcast.Broadcast
+import server.db.DesenhoDao
+import server.queue.ProcessingQueue
+import java.io.File
+import java.util.UUID
+
+@Serializable
+data class ListResponse(val desenhos: List<DesenhoAutodesk>, val total: Int, val limit: Int, val offset: Int)
+
+@Serializable
+data class UpdateBody(
+    val status: String? = null,
+    val progresso: Int? = null,
+    val arquivosProcessados: String? = null, // JSON string
+    val erro: String? = null
+)
+
+@Serializable
+data class QueueBody(
+    val nomeArquivo: String,
+    val computador: String,
+    val caminhoDestino: String,
+    val arquivoOriginal: String,
+    val formatos: List<String> = listOf("pdf")
+)
+
+@Serializable
+data class ErrorResponse(val erro: String, val mensagem: String? = null)
+
+@Serializable
+data class QueueResponse(
+    val id: String,
+    val status: String,
+    val posicaoFila: Int,
+    val mensagem: String,
+    val caminhoDestino: String,
+    val formatosSolicitados: List<String>
+)
+
+@Serializable
+data class SuccessResponse(
+    val sucesso: Boolean,
+    val mensagem: String,
+    val id: String? = null,
+    val status: String? = null,
+    val posicaoFila: Int? = null,
+    val formatosRestantes: List<String>? = null
+)
+
+@Serializable
+data class CancelResponse(
+    val sucesso: Boolean,
+    val mensagem: String,
+    val id: String,
+    val status: String
+)
+
+fun Route.apiDesenhos(desenhoDao: DesenhoDao, queue: ProcessingQueue, broadcast: Broadcast) {
+    // GET /api/desenhos - lista com filtros
+    get("/api/desenhos") {
+        val status = call.request.queryParameters["status"]
+        val computador = call.request.queryParameters["computador"]
+        val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 50
+        val offset = call.request.queryParameters["offset"]?.toIntOrNull() ?: 0
+        val desenhos = desenhoDao.list(status = status, computador = computador, limit = limit, offset = offset)
+        val total = desenhoDao.count(status)
+        call.respond(ListResponse(desenhos, total, limit, offset))
+    }
+
+    // POST /api/desenhos/upload - upload (multipart)
+    post("/api/desenhos/upload") {
+        val multipart = call.receiveMultipart()
+        var nomeArquivo: String? = null
+        var computador: String? = null
+        var caminhoDestino: String? = null
+        var formatos: String? = null
+        var fileBytes: ByteArray? = null
+        var fileName: String? = null
+
+        multipart.forEachPart { part ->
+            when (part) {
+                is PartData.FormItem -> {
+                    when (part.name) {
+                        "nomeArquivo" -> nomeArquivo = part.value
+                        "computador" -> computador = part.value
+                        "caminhoDestino" -> caminhoDestino = part.value
+                        "formatos" -> formatos = part.value
+                    }
+                }
+                is PartData.FileItem -> {
+                    if (part.name == "arquivo") {
+                        fileName = part.originalFileName
+                        val tempFile = java.io.File.createTempFile("upload_", ".tmp")
+                        try {
+                            val stream = part.streamProvider()
+                            stream.use { input ->
+                                tempFile.outputStream().use { input.copyTo(it) }
+                            }
+                            fileBytes = tempFile.readBytes()
+                        } finally {
+                            tempFile.delete()
+                        }
+                    }
+                }
+                else -> {}
+            }
+            part.dispose()
+        }
+
+        if (fileBytes == null || nomeArquivo.isNullOrBlank() || computador.isNullOrBlank() || caminhoDestino.isNullOrBlank()) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Campos obrigatórios faltando", mensagem = "nomeArquivo, computador, caminhoDestino e arquivo são obrigatórios"))
+            return@post
+        }
+
+        val formatosList = formatos?.let { kotlinx.serialization.json.Json.decodeFromString<List<String>>(it) } ?: listOf("pdf")
+        val validFormats = setOf("pdf", "dwg", "dxf", "dwf", "step", "stl", "bom", "csv")
+        val formatosValidados = formatosList.map { it.trim().lowercase() }.filter { it in validFormats }
+        if (formatosValidados.isEmpty()) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Nenhum formato válido", mensagem = "Especifique pelo menos um: pdf, dwg, dxf, dwf"))
+            return@post
+        }
+
+        val id = UUID.randomUUID().toString()
+        val now = java.time.Instant.now().toString()
+        val pos = desenhoDao.countPendentesEProcessando() + 1
+        val pastaProcessamento = File(System.getProperty("user.dir"), "processados").resolve(id).apply { mkdirs() }
+        val arquivoFinal = pastaProcessamento.resolve(fileName ?: nomeArquivo!!)
+        File(arquivoFinal.toURI()).writeBytes(fileBytes!!)
+
+        val desenho = DesenhoAutodesk(
+            id = id,
+            nomeArquivo = nomeArquivo!!,
+            computador = computador!!,
+            caminhoDestino = caminhoDestino!!,
+            status = "pendente",
+            posicaoFila = pos,
+            horarioEnvio = now,
+            horarioAtualizacao = now,
+            formatosSolicitadosJson = """["${formatosValidados.joinToString("\",\"")}"]""",
+            arquivoOriginal = arquivoFinal.absolutePath,
+            pastaProcessamento = pastaProcessamento.absolutePath,
+            criadoEm = now,
+            atualizadoEm = now
+        )
+        desenhoDao.insert(desenho)
+        queue.add(id)
+        broadcast.sendInsert(desenhoDao.getById(id)!!)
+
+        call.respond(HttpStatusCode.Created, QueueResponse(
+            id = id,
+            status = "pendente",
+            posicaoFila = pos,
+            mensagem = "Arquivo recebido e adicionado à fila",
+            caminhoDestino = caminhoDestino!!,
+            formatosSolicitados = formatosValidados
+        ))
+    }
+
+    // POST /api/desenhos/queue - adiciona arquivo LOCAL à fila (sem upload, mesmo servidor)
+    post("/api/desenhos/queue") {
+        val body = call.receive<QueueBody>()
+        
+        if (body.nomeArquivo.isBlank() || body.computador.isBlank() || 
+            body.caminhoDestino.isBlank() || body.arquivoOriginal.isBlank()) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(
+                erro = "Campos obrigatórios faltando",
+                mensagem = "nomeArquivo, computador, caminhoDestino e arquivoOriginal são obrigatórios"
+            ))
+            return@post
+        }
+        
+        val arquivoFile = File(body.arquivoOriginal)
+        if (!arquivoFile.exists()) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(
+                erro = "Arquivo não encontrado",
+                mensagem = "O arquivo ${body.arquivoOriginal} não existe no servidor"
+            ))
+            return@post
+        }
+        
+        val validFormats = setOf("pdf", "dwg", "dxf", "dwf", "step", "stl", "bom", "csv")
+        val formatosValidados = body.formatos.map { it.trim().lowercase() }.filter { it in validFormats }
+        if (formatosValidados.isEmpty()) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(
+                erro = "Nenhum formato válido",
+                mensagem = "Especifique pelo menos um: pdf, dwg, dxf, dwf"
+            ))
+            return@post
+        }
+        
+        val id = UUID.randomUUID().toString()
+        val now = java.time.Instant.now().toString()
+        val pos = desenhoDao.countPendentesEProcessando() + 1
+        val pastaProcessamento = File(System.getProperty("user.dir"), "processados").resolve(id).apply { mkdirs() }
+        
+        val desenho = DesenhoAutodesk(
+            id = id,
+            nomeArquivo = body.nomeArquivo,
+            computador = body.computador,
+            caminhoDestino = body.caminhoDestino,
+            status = "pendente",
+            posicaoFila = pos,
+            horarioEnvio = now,
+            horarioAtualizacao = now,
+            formatosSolicitadosJson = """["${formatosValidados.joinToString("\",\"")}"]""",
+            arquivoOriginal = body.arquivoOriginal,
+            pastaProcessamento = pastaProcessamento.absolutePath,
+            criadoEm = now,
+            atualizadoEm = now
+        )
+        desenhoDao.insert(desenho)
+        queue.add(id)
+        broadcast.sendInsert(desenhoDao.getById(id)!!)
+        
+        call.respond(HttpStatusCode.Created, QueueResponse(
+            id = id,
+            status = "pendente",
+            posicaoFila = pos,
+            mensagem = "Arquivo adicionado à fila de processamento",
+            caminhoDestino = body.caminhoDestino,
+            formatosSolicitados = formatosValidados
+        ))
+    }
+
+    // GET /api/desenhos/{id}
+    get("/api/desenhos/{id}") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val d = desenhoDao.getById(id) ?: return@get call.respond(HttpStatusCode.NotFound, ErrorResponse(erro = "Desenho não encontrado"))
+        call.respond(d)
+    }
+
+    // PATCH /api/desenhos/{id}
+    patch("/api/desenhos/{id}") {
+        val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+        val body = call.receive<UpdateBody>()
+        desenhoDao.getById(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+        val now = java.time.Instant.now().toString()
+        desenhoDao.update(
+            id,
+            status = body.status,
+            horarioAtualizacao = now,
+            progresso = body.progresso,
+            arquivosProcessados = body.arquivosProcessados,
+            erro = body.erro
+        )
+        val updated = desenhoDao.getById(id)!!
+        broadcast.sendUpdate(updated)
+        call.respond(SuccessResponse(sucesso = true, mensagem = "Desenho atualizado", id = id))
+    }
+
+    // POST /api/desenhos/{id}/cancelar
+    post("/api/desenhos/{id}/cancelar") {
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+        val d = desenhoDao.getById(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+        if (d.status == "concluido") {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Desenho já concluído"))
+            return@post
+        }
+        if (d.status == "cancelado") {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Desenho já cancelado"))
+            return@post
+        }
+        queue.remove(id)
+        val now = java.time.Instant.now().toString()
+        desenhoDao.update(id, status = "cancelado", horarioAtualizacao = now, canceladoEm = now)
+        val updated = desenhoDao.getById(id)!!
+        broadcast.sendUpdate(updated)
+        call.respond(CancelResponse(sucesso = true, mensagem = "Desenho cancelado", id = id, status = "cancelado"))
+    }
+
+    // POST /api/desenhos/{id}/retry
+    post("/api/desenhos/{id}/retry") {
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+        val d = desenhoDao.getById(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+        val solicitados = d.formatosSolicitados.ifEmpty { listOf("pdf") }
+        val jaGerados = d.arquivosProcessados.map { it.tipo.lowercase() }.toSet()
+        val restantes = solicitados.map { it.lowercase() }.filter { !jaGerados.contains(it) }
+        if (restantes.isEmpty()) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Nada a reprocessar: todos os formatos já gerados"))
+            return@post
+        }
+        val pos = desenhoDao.countPendentesEProcessando() + 1
+        val now = java.time.Instant.now().toString()
+        desenhoDao.update(id, status = "pendente", horarioAtualizacao = now, progresso = 0, erro = null, canceladoEm = null, posicaoFila = pos)
+        queue.add(id, restantes)
+        val updated = desenhoDao.getById(id)!!
+        broadcast.sendUpdate(updated)
+        call.respond(SuccessResponse(sucesso = true, mensagem = "Desenho na fila para reprocessamento", id = id, status = "pendente", posicaoFila = pos, formatosRestantes = restantes))
+    }
+
+    // GET /api/desenhos/{id}/download/{tipo}
+    get("/api/desenhos/{id}/download/{tipo}") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val tipo = call.parameters["tipo"]?.lowercase() ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val d = desenhoDao.getById(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+        if (d.status != "concluido" && d.status != "concluido_com_erros") {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Desenho ainda não processado. Status: ${d.status}"))
+            return@get
+        }
+        val arquivo = d.arquivosProcessados.find { it.tipo.equals(tipo, true) }
+        if (arquivo == null || !File(arquivo.caminho).exists()) {
+            call.respond(HttpStatusCode.NotFound, ErrorResponse(erro = "Arquivo do tipo $tipo não encontrado"))
+            return@get
+        }
+        val file = File(arquivo.caminho)
+        call.response.header(HttpHeaders.ContentDisposition, "attachment; filename=\"${arquivo.nome}\"")
+        call.respondBytes(file.readBytes(), ContentType.Application.OctetStream)
+    }
+
+    // WebSocket /ws - clientes recebem initial + INSERT/UPDATE/DELETE
+    webSocket("/ws") {
+        broadcast.addSession(this)
+        try {
+            send(io.ktor.websocket.Frame.Text("""{"type":"subscribe","table":"desenhos"}"""))
+            broadcast.sendInitial(desenhoDao.list(limit = 500, offset = 0))
+            for (frame in incoming) {
+                if (frame is io.ktor.websocket.Frame.Text) {
+                    val text = (frame as io.ktor.websocket.Frame.Text).readText()
+                    if (text.contains("subscribe")) broadcast.sendInitial(desenhoDao.list(limit = 500, offset = 0))
+                }
+            }
+        } finally {
+            broadcast.removeSession(this)
+        }
+    }
+}
