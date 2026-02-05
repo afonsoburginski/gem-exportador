@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(java -version:*)",
+      "Bash(where java:*)",
+      "Bash(powershell -Command \"Get-WinEvent -LogName Application -MaxEvents 20 | Where-Object { $_.Message -like ''*lado*'' -or $_.Message -like ''*side*'' -or $_.Message -like ''*SideBySide*'' -or $_.Message -like ''*GemExportador*'' -or $_.Message -like ''*sxs*'' } | Format-List TimeCreated,Id,Message\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\ti\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Dev-gem-exportador\\\\54abd49f-909f-4971-9b9f-f4e0ab09ee69\\\\scratchpad\\\\check_sxs.ps1\")",
+      "Bash(echo:*)",
+      "Bash(where:*)",
+      "Bash(jpackage:*)",
+      "Bash(powershell:*)"
+    ]
+  }
+}
