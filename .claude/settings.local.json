@@ -9,7 +9,18 @@
       "Bash(echo:*)",
       "Bash(where:*)",
       "Bash(jpackage:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(cd:*)",
+      "Bash(dir:*)",
+      "Bash(if exist \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" echo \"NSIS found at C:\\\\Program Files \\(x86\\)\\\\NSIS\"\" || if exist \"C:Program FilesNSISmakensis.exe\" echo \"NSIS found at C:Program FilesNSIS\"\")",
+      "Bash(winget:*)",
+      "Bash(./gradlew tasks:*)",
+      "WebSearch",
+      "WebFetch(domain:www.jetbrains.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:nsis.sourceforge.io)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

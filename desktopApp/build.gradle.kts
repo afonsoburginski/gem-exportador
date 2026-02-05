@@ -1,5 +1,3 @@
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-
 plugins {
     kotlin("multiplatform")
     id("org.jetbrains.compose")
@@ -26,25 +24,18 @@ val appName: String by project.extra { project.property("app.name").toString() }
 compose.desktop {
     application {
         mainClass = "MainKt"
-        
+
         // Habilita hot reload para desenvolvimento
         jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
         jvmArgs("--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED")
 
-        // ProGuard desabilitado - causa erros no Windows
-        // buildTypes.release {
-        //     proguard {
-        //         configurationFiles.from(project.file("proguard-rules.pro"))
-        //     }
-        // }
-
         nativeDistributions {
-            targetFormats(TargetFormat.Msi)
             packageName = appName
             packageVersion = appVersion
             description = "Exportador de desenhos Autodesk Inventor"
             vendor = "JhonRob"
-            
+            includeAllModules = true
+
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/favicon.ico"))
                 menuGroup = appName
@@ -68,4 +59,40 @@ tasks.register("generateVersionFile") {
 
 tasks.named("jvmProcessResources") {
     dependsOn("generateVersionFile")
+}
+
+// Injeta javaw.exe do JDK no runtime do app (jlink remove com --strip-native-commands)
+tasks.register<Copy>("injectJavaw") {
+    dependsOn("createDistributable")
+    val javaHome = System.getProperty("java.home")
+    from(file("$javaHome/bin/javaw.exe"))
+    into(file("build/compose/binaries/main/app/$appName/runtime/bin"))
+}
+
+// Constroi instalador NSIS
+tasks.register<Exec>("buildNsisInstaller") {
+    dependsOn("injectJavaw")
+    val nsisScript = file("installer.nsi")
+    val appDir = file("build/compose/binaries/main/app/$appName")
+    val outputDir = file("build/compose/binaries/main/nsis")
+
+    doFirst {
+        outputDir.mkdirs()
+    }
+
+    // Procura makensis.exe no PATH ou em locais comuns
+    val nsisLocations = listOf(
+        "C:\\Program Files (x86)\\NSIS\\makensis.exe",
+        "C:\\Program Files\\NSIS\\makensis.exe"
+    )
+    val makensisPath = nsisLocations.firstOrNull { File(it).exists() } ?: "makensis"
+
+    commandLine(
+        makensisPath,
+        "/DAPP_VERSION=$appVersion",
+        "/DAPP_NAME=$appName",
+        "/DAPP_DIR=${appDir.absolutePath}",
+        "/DOUTPUT_DIR=${outputDir.absolutePath}",
+        nsisScript.absolutePath
+    )
 }

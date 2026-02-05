@@ -11,44 +11,55 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
-      
+
       - name: Get version from tag
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
         shell: bash
-      
+
       - name: Update version
         run: (Get-Content gradle.properties) -replace 'app.version=.*', "app.version=${{ steps.get_version.outputs.VERSION }}" | Set-Content gradle.properties
         shell: pwsh
-      
-      - name: Build MSI
-        run: ./gradlew packageMsi --parallel --build-cache -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+
+      - name: Ensure NSIS is in PATH
+        run: |
+          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") {
+            echo "C:\Program Files (x86)\NSIS" | Out-File -Append -FilePath $env:GITHUB_PATH
+            Write-Host "NSIS found and added to PATH"
+          } else {
+            choco install nsis -y --no-progress
+            Write-Host "NSIS installed via Chocolatey"
+          }
+        shell: pwsh
+
+      - name: Build NSIS Installer
+        run: ./gradlew buildNsisInstaller --parallel --build-cache -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
         shell: bash
-      
+
       - name: Create version.json
         run: |
-          $msi = (Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Filter "*.msi" | Select-Object -First 1).Name
+          $installer = "GemExportador-${{ steps.get_version.outputs.VERSION }}-setup.exe"
           @"
-          {"version":"${{ steps.get_version.outputs.VERSION }}","downloadUrl":"https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/$msi","releaseNotes":"Versao ${{ steps.get_version.outputs.VERSION }}","mandatory":false}
+          {"version":"${{ steps.get_version.outputs.VERSION }}","downloadUrl":"https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/$installer","releaseNotes":"Versao ${{ steps.get_version.outputs.VERSION }}","mandatory":false}
           "@ | Out-File -FilePath version.json -Encoding utf8
         shell: pwsh
-      
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            desktopApp/build/compose/binaries/main/msi/*.msi
+            desktopApp/build/compose/binaries/main/nsis/*.exe
             version.json
           generate_release_notes: true
         env:
