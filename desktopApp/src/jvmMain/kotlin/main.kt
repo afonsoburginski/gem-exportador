@@ -2,8 +2,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
 import org.jetbrains.skia.Image
 import java.awt.Frame
 import java.awt.Graphics2D
@@ -43,11 +47,19 @@ fun main() {
     // Inicia o app Compose
     application {
         val icon = loadWindowIcon()
+        val windowState = rememberWindowState(
+            size = DpSize(900.dp, 600.dp) // Tamanho inicial
+        )
+        
         Window(
             title = "Gem exportador",
             icon = icon,
+            state = windowState,
             onCloseRequest = ::exitApplication
         ) {
+            // Define tamanho mínimo da janela
+            window.minimumSize = java.awt.Dimension(800, 500)
+            
             // Aplica dark title bar após a janela ser exibida
             LaunchedEffect(Unit) {
                 delay(100) // Pequeno delay para garantir que a janela existe

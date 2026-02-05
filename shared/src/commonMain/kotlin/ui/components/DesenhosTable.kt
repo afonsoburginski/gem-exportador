@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -85,45 +86,52 @@ fun DesenhosTable(
         lista
     }
     
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(4.dp))
-            .background(AppColors.Surface)
-            .border(1.dp, AppColors.Border, RoundedCornerShape(4.dp))
-    ) {
-        // Toolbar
-        Toolbar(
-            emFila = emFila.size,
-            concluidos = concluidos.size,
-            erros = comProblema.count { it.statusEnum == DesenhoStatus.ERRO },
-            cancelados = comProblema.count { it.statusEnum == DesenhoStatus.CANCELADO },
-            mostrarConcluidos = mostrarConcluidos,
-            onToggleConcluidos = { mostrarConcluidos = !mostrarConcluidos },
-            updateAvailable = updateAvailable,
-            onUpdateClick = onUpdateClick
-        )
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        // Layout compacto para telas < 700dp de largura
+        val isCompact = maxWidth < 700.dp
         
-        Divider(color = AppColors.Border, thickness = 1.dp)
-        
-        // Header
-        TableHeader()
-        
-        Divider(color = AppColors.Border, thickness = 1.dp)
-        
-        // Rows
-        if (desenhosExibidos.isEmpty()) {
-            EmptyState()
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(desenhosExibidos, key = { it.id }) { desenho ->
-                    TableRowWithContextMenu(
-                        desenho = desenho,
-                        actions = actions
-                    )
-                    Divider(color = AppColors.Border, thickness = 1.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(4.dp))
+                .background(AppColors.Surface)
+                .border(1.dp, AppColors.Border, RoundedCornerShape(4.dp))
+        ) {
+            // Toolbar
+            Toolbar(
+                emFila = emFila.size,
+                concluidos = concluidos.size,
+                erros = comProblema.count { it.statusEnum == DesenhoStatus.ERRO },
+                cancelados = comProblema.count { it.statusEnum == DesenhoStatus.CANCELADO },
+                mostrarConcluidos = mostrarConcluidos,
+                onToggleConcluidos = { mostrarConcluidos = !mostrarConcluidos },
+                updateAvailable = updateAvailable,
+                onUpdateClick = onUpdateClick,
+                isCompact = isCompact
+            )
+            
+            Divider(color = AppColors.Border, thickness = 1.dp)
+            
+            // Header
+            TableHeader(isCompact = isCompact)
+            
+            Divider(color = AppColors.Border, thickness = 1.dp)
+            
+            // Rows
+            if (desenhosExibidos.isEmpty()) {
+                EmptyState()
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(desenhosExibidos, key = { it.id }) { desenho ->
+                        TableRowWithContextMenu(
+                            desenho = desenho,
+                            actions = actions,
+                            isCompact = isCompact
+                        )
+                        Divider(color = AppColors.Border, thickness = 1.dp)
+                    }
                 }
             }
         }
@@ -139,7 +147,8 @@ private fun Toolbar(
     mostrarConcluidos: Boolean,
     onToggleConcluidos: () -> Unit,
     updateAvailable: VersionInfo? = null,
-    onUpdateClick: () -> Unit = {}
+    onUpdateClick: () -> Unit = {},
+    isCompact: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -248,7 +257,7 @@ private fun StatusBadge(
 }
 
 @Composable
-private fun TableHeader() {
+private fun TableHeader(isCompact: Boolean = false) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,10 +266,12 @@ private fun TableHeader() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         HeaderCell(text = "ARQUIVO", modifier = Modifier.weight(1.0f))
-        HeaderCell(text = "FORMATOS", modifier = Modifier.weight(1.5f))
-        HeaderCell(text = "COMPUTADOR", modifier = Modifier.weight(0.8f))
-        HeaderCell(text = "PASTA", modifier = Modifier.weight(1.8f))
-        HeaderCell(text = "ENVIADO", modifier = Modifier.weight(0.8f))
+        HeaderCell(text = "FORMATOS", modifier = Modifier.weight(if (isCompact) 1.2f else 1.5f))
+        if (!isCompact) {
+            HeaderCell(text = "COMPUTADOR", modifier = Modifier.weight(0.8f))
+            HeaderCell(text = "PASTA", modifier = Modifier.weight(1.8f))
+        }
+        HeaderCell(text = "ENVIADO", modifier = Modifier.weight(if (isCompact) 0.6f else 0.8f))
         HeaderCell(text = "AÇÕES", modifier = Modifier.weight(0.3f))
     }
 }
@@ -280,7 +291,8 @@ private fun HeaderCell(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun TableRowWithContextMenu(
     desenho: DesenhoAutodesk,
-    actions: DesenhoActions
+    actions: DesenhoActions,
+    isCompact: Boolean = false
 ) {
     val status = desenho.statusEnum
     val podeRetry = status == DesenhoStatus.ERRO || status == DesenhoStatus.CANCELADO || status == DesenhoStatus.CONCLUIDO_COM_ERROS
@@ -302,10 +314,12 @@ private fun TableRowWithContextMenu(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ArquivoCell(desenho, modifier = Modifier.weight(1.0f))
-            FormatosCell(desenho, modifier = Modifier.weight(1.5f))
-            ComputadorCell(desenho.computador, modifier = Modifier.weight(0.8f))
-            PastaCell(desenho, modifier = Modifier.weight(1.8f))
-            EnviadoCell(desenho.horarioEnvio, modifier = Modifier.weight(0.8f))
+            FormatosCell(desenho, modifier = Modifier.weight(if (isCompact) 1.2f else 1.5f), isCompact = isCompact)
+            if (!isCompact) {
+                ComputadorCell(desenho.computador, modifier = Modifier.weight(0.8f))
+                PastaCell(desenho, modifier = Modifier.weight(1.8f))
+            }
+            EnviadoCell(desenho.horarioEnvio, modifier = Modifier.weight(if (isCompact) 0.6f else 0.8f), isCompact = isCompact)
             AcoesCell(desenho, actions, modifier = Modifier.weight(0.3f))
         }
     }
@@ -412,7 +426,7 @@ private fun ArquivoCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun FormatosCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier) {
+private fun FormatosCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier, isCompact: Boolean = false) {
     val formatos = desenho.formatosSolicitados
     val status = desenho.statusEnum
     val progresso = desenho.progresso
@@ -574,15 +588,23 @@ private fun ClickablePath(
 }
 
 @Composable
-private fun EnviadoCell(horarioEnvio: String, modifier: Modifier = Modifier) {
-    val horarioFormatado = horarioEnvio
-        .replace(Regex(":\\d{2}\\..*"), "")
-        .replace(Regex("\\+\\d{2}$"), "")
+private fun EnviadoCell(horarioEnvio: String, modifier: Modifier = Modifier, isCompact: Boolean = false) {
+    val horarioFormatado = if (isCompact) {
+        // Em modo compacto, mostra apenas hora:minuto
+        horarioEnvio
+            .replace(Regex("^\\d{4}-\\d{2}-\\d{2}[T ]?"), "")
+            .replace(Regex(":\\d{2}\\..*"), "")
+            .replace(Regex("\\+\\d{2}$"), "")
+    } else {
+        horarioEnvio
+            .replace(Regex(":\\d{2}\\..*"), "")
+            .replace(Regex("\\+\\d{2}$"), "")
+    }
     
     Text(
         text = horarioFormatado.ifEmpty { "—" },
         color = AppColors.TextPrimary,
-        fontSize = 13.sp,
+        fontSize = if (isCompact) 12.sp else 13.sp,
         modifier = modifier
     )
 }
