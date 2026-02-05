@@ -49,6 +49,10 @@ compose.desktop {
                 iconFile.set(project.file("src/jvmMain/resources/favicon.ico"))
                 menuGroup = appName
                 upgradeUuid = "8F3B1A2C-5D4E-6F7A-8B9C-0D1E2F3A4B5C"
+                shortcut = true
+                dirChooser = true
+                perUserInstall = false
+                menu = true
             }
         }
     }
