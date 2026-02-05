@@ -36,7 +36,7 @@ object UpdateDownloader {
             val tempDir = File(System.getProperty("java.io.tmpdir"), "gem-exportador-update")
             tempDir.mkdirs()
             
-            val fileName = url.substringAfterLast("/").ifEmpty { "GemExportador-update.msi" }
+            val fileName = url.substringAfterLast("/").ifEmpty { "GemExportador-setup.exe" }
             val outputFile = File(tempDir, fileName)
             
             // Se já existe um arquivo com mesmo nome, remove
@@ -82,28 +82,35 @@ object UpdateDownloader {
     }
     
     /**
-     * Executa o instalador MSI
-     * @param msiFile Arquivo MSI para instalar
+     * Executa o instalador (suporta .exe do NSIS e .msi legado)
+     * @param installerFile Arquivo do instalador
      * @return true se o instalador foi iniciado com sucesso
      */
-    fun installUpdate(msiFile: File): Boolean {
+    fun installUpdate(installerFile: File): Boolean {
         return try {
-            if (!msiFile.exists()) {
-                println("[UPDATE] Arquivo MSI não encontrado: ${msiFile.absolutePath}")
+            if (!installerFile.exists()) {
+                println("[UPDATE] Arquivo do instalador não encontrado: ${installerFile.absolutePath}")
                 return false
             }
             
-            println("[UPDATE] Executando instalador: ${msiFile.absolutePath}")
+            println("[UPDATE] Executando instalador: ${installerFile.absolutePath}")
             
-            // Executa o instalador MSI
-            // /i = install, /passive = mostra progresso mas não requer interação
-            val process = ProcessBuilder(
-                "msiexec",
-                "/i",
-                msiFile.absolutePath,
-                "/passive",
-                "/norestart"
-            ).start()
+            val process = if (installerFile.name.endsWith(".msi")) {
+                // Instalador MSI legado
+                ProcessBuilder(
+                    "msiexec",
+                    "/i",
+                    installerFile.absolutePath,
+                    "/passive",
+                    "/norestart"
+                ).start()
+            } else {
+                // Instalador NSIS (.exe) - executa diretamente com /S para modo silencioso
+                ProcessBuilder(
+                    installerFile.absolutePath,
+                    "/S"
+                ).start()
+            }
             
             // Não espera o processo terminar, pois o app vai fechar
             println("[UPDATE] Instalador iniciado com PID: ${process.pid()}")

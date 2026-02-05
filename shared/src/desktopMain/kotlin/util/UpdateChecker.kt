@@ -58,12 +58,14 @@ object UpdateChecker {
             val remoteVersion = release.tag_name.removePrefix("v")
             
             if (AppVersion.isNewerVersion(remoteVersion)) {
-                // Encontra o asset .msi
-                val msiAsset = release.assets.find { it.name.endsWith(".msi") }
+                // Encontra o asset do instalador (.exe do NSIS ou .msi legado)
+                val installerAsset = release.assets.find { 
+                    it.name.endsWith("-setup.exe") || it.name.endsWith(".exe") || it.name.endsWith(".msi")
+                }
                 
                 VersionInfo(
                     version = remoteVersion,
-                    downloadUrl = msiAsset?.browser_download_url 
+                    downloadUrl = installerAsset?.browser_download_url 
                         ?: "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/tag/${release.tag_name}",
                     releaseNotes = release.body ?: release.name ?: "Nova versão disponível",
                     mandatory = false
