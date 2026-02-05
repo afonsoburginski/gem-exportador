@@ -58,12 +58,21 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
     } else null
 
     // Conecta ao WebSocket do servidor para sincronizar tabela em tempo real
-    LaunchedEffect(realtimeClient) {
+    DisposableEffect(realtimeClient) {
         if (realtimeClient != null && serverBaseUrl != null) {
             logToFile("INFO", "Gem exportador (desktop) iniciado; servidor=$serverBaseUrl")
-            realtimeClient.connect()
+            val job = kotlinx.coroutines.CoroutineScope(Dispatchers.Default).launch {
+                realtimeClient.connect()
+            }
+            onDispose {
+                job.cancel()
+                kotlinx.coroutines.runBlocking { 
+                    try { realtimeClient.disconnect() } catch (_: Exception) {}
+                }
+            }
         } else {
             logToFile("INFO", "Gem exportador iniciado (modo offline/local)")
+            onDispose { }
         }
     }
 

@@ -16,6 +16,9 @@ actual fun getSqliteDatabasePath(): String? = DatabaseDriverFactory.getDatabaseP
 actual suspend fun checkForUpdates(): VersionInfo? {
     return try {
         UpdateChecker.checkForUpdate()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        // App fechando - não logar como erro
+        null
     } catch (e: Exception) {
         println("[UPDATE] Erro ao verificar atualizações: ${e.message}")
         null

@@ -60,6 +60,7 @@ class RealtimeClient(
     
     private var reconnectJob: Job? = null
     private var wsSession: WebSocketSession? = null
+    private var shouldReconnect = true
     
     enum class ConnectionState {
         DISCONNECTED,
@@ -101,11 +102,17 @@ class RealtimeClient(
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            // Cancelamento normal (app fechando) - não logar como erro
+            _connectionState.value = ConnectionState.DISCONNECTED
+            throw e
         } catch (e: Exception) {
             _connectionState.value = ConnectionState.DISCONNECTED
-            logToFile("ERROR", "WebSocket falhou: ${e.message}")
-            _events.emit(RealtimeEvent.Error("Erro de conexão: ${e.message}"))
-            scheduleReconnect()
+            if (shouldReconnect) {
+                logToFile("ERROR", "WebSocket falhou: ${e.message}")
+                _events.emit(RealtimeEvent.Error("Erro de conexão: ${e.message}"))
+                scheduleReconnect()
+            }
         }
     }
     
@@ -113,11 +120,17 @@ class RealtimeClient(
      * Desconecta do servidor
      */
     suspend fun disconnect() {
+        shouldReconnect = false
         reconnectJob?.cancel()
-        wsSession?.close()
+        reconnectJob = null
+        try {
+            wsSession?.close()
+        } catch (_: Exception) { }
         wsSession = null
         _connectionState.value = ConnectionState.DISCONNECTED
-        _events.emit(RealtimeEvent.Disconnected)
+        try {
+            _events.emit(RealtimeEvent.Disconnected)
+        } catch (_: Exception) { }
     }
     
     /**
@@ -178,11 +191,14 @@ class RealtimeClient(
      * Agenda reconexão após falha
      */
     private fun scheduleReconnect() {
+        if (!shouldReconnect) return
         reconnectJob?.cancel()
         reconnectJob = CoroutineScope(Dispatchers.Default).launch {
             delay(5000) // Aguarda 5 segundos antes de reconectar
-            _connectionState.value = ConnectionState.RECONNECTING
-            connect()
+            if (shouldReconnect) {
+                _connectionState.value = ConnectionState.RECONNECTING
+                connect()
+            }
         }
     }
 }
