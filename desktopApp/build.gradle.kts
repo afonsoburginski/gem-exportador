@@ -75,6 +75,7 @@ tasks.register<Exec>("buildNsisInstaller") {
     val nsisScript = file("installer.nsi")
     val appDir = file("build/compose/binaries/main/app/$appName")
     val outputDir = file("build/compose/binaries/main/nsis")
+    val iconFile = file("src/jvmMain/resources/favicon.ico")
 
     doFirst {
         outputDir.mkdirs()
@@ -93,6 +94,7 @@ tasks.register<Exec>("buildNsisInstaller") {
         "/DAPP_NAME=$appName",
         "/DAPP_DIR=${appDir.absolutePath}",
         "/DOUTPUT_DIR=${outputDir.absolutePath}",
+        "/DICON_FILE=${iconFile.absolutePath}",
         nsisScript.absolutePath
     )
 }

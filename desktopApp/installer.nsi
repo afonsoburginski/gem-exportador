@@ -16,6 +16,9 @@
 !ifndef OUTPUT_DIR
   !define OUTPUT_DIR "build\compose\binaries\main\nsis"
 !endif
+!ifndef ICON_FILE
+  !define ICON_FILE "src\jvmMain\resources\favicon.ico"
+!endif
 
 ; --- Configuracao geral ---
 Name "${APP_NAME} ${APP_VERSION}"
@@ -27,8 +30,8 @@ SetCompressor /SOLID lzma
 
 ; --- Interface ---
 !define MUI_ABORTWARNING
-!define MUI_ICON "${APP_DIR}\${APP_NAME}.ico"
-!define MUI_UNICON "${APP_DIR}\${APP_NAME}.ico"
+!define MUI_ICON "${ICON_FILE}"
+!define MUI_UNICON "${ICON_FILE}"
 
 ; --- Paginas do instalador ---
 !insertmacro MUI_PAGE_WELCOME
@@ -59,8 +62,8 @@ FunctionEnd
 Section "Install"
   SetOutPath "$INSTDIR"
 
-  ; Icone do app
-  File "${APP_DIR}\${APP_NAME}.ico"
+  ; Icone do app (usa o original, nao o gerado pelo jpackage)
+  File "/oname=${APP_NAME}.ico" "${ICON_FILE}"
 
   ; Diretorio app (JARs, DLLs, resources, config)
   SetOutPath "$INSTDIR\app"
