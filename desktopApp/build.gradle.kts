@@ -45,6 +45,17 @@ compose.desktop {
             description = "Exportador de desenhos Autodesk Inventor"
             vendor = "JhonRob"
             
+            // Módulos JRE mínimos necessários
+            modules(
+                "java.base",
+                "java.desktop",
+                "java.logging",
+                "java.naming",
+                "java.net.http",
+                "java.sql",
+                "jdk.unsupported"
+            )
+            
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/favicon.ico"))
                 menuGroup = appName

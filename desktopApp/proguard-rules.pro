@@ -1,79 +1,72 @@
-# ProGuard rules para GemExportador
-# Mantém tamanho reduzido sem quebrar funcionalidades
+# ProGuard rules para GemExportador - OTIMIZADO
 
-# Manter classes principais
--keep class MainKt { *; }
--keep class MainKt$* { *; }
+# Otimizações agressivas
+-optimizationpasses 5
+-allowaccessmodification
+-mergeinterfacesaggressively
 
-# Manter Compose
--keep class androidx.compose.** { *; }
+# Manter entry point
+-keep class MainKt { public static void main(java.lang.String[]); }
+
+# Compose - manter apenas o essencial
+-keep class androidx.compose.runtime.** { *; }
+-keep class androidx.compose.ui.** { *; }
+-keep class androidx.compose.foundation.** { *; }
+-keep class androidx.compose.material.** { *; }
 -keep class org.jetbrains.skia.** { *; }
 -keep class org.jetbrains.skiko.** { *; }
 
-# Manter Ktor (servidor e cliente)
--keep class io.ktor.** { *; }
--keep class io.ktor.server.** { *; }
+# Ktor - manter classes usadas
+-keep class io.ktor.server.cio.** { *; }
+-keep class io.ktor.server.engine.** { *; }
+-keep class io.ktor.server.routing.** { *; }
+-keep class io.ktor.server.websocket.** { *; }
 -keep class io.ktor.client.** { *; }
--keep class io.ktor.serialization.** { *; }
 -keep class io.ktor.http.** { *; }
 -keep class io.ktor.websocket.** { *; }
--keep class io.ktor.utils.** { *; }
+-keep class io.ktor.serialization.** { *; }
+-keep class io.ktor.utils.io.** { *; }
 
-# Manter kotlinx.serialization
--keep class kotlinx.serialization.** { *; }
+# Serialization - manter classes anotadas
 -keepclassmembers class * {
     @kotlinx.serialization.Serializable *;
 }
+-keep,allowobfuscation @kotlinx.serialization.Serializable class *
 -keepclassmembers @kotlinx.serialization.Serializable class * {
-    *;
+    *** Companion;
+    *** INSTANCE;
+    kotlinx.serialization.KSerializer serializer(...);
 }
 
-# Manter classes de modelo (serialização)
+# Modelos do app
 -keep class model.** { *; }
 -keep class data.** { *; }
--keep class util.** { *; }
--keep class ui.** { *; }
--keep class config.** { *; }
+-keep class util.VersionInfo { *; }
+-keep class util.AppVersion { *; }
 -keep class server.** { *; }
+-keep class config.** { *; }
 
-# Manter SQLDelight
--keep class app.cash.sqldelight.** { *; }
+# SQLDelight
+-keep class app.cash.sqldelight.driver.jdbc.** { *; }
 -keep class com.jhonrob.gemexportador.db.** { *; }
 
-# Manter JNA para dark title bar
+# JNA
 -keep class com.sun.jna.** { *; }
--keep class com.sun.jna.platform.** { *; }
 
-# Manter SLF4J
--keep class org.slf4j.** { *; }
--dontwarn org.slf4j.**
+# Dotenv
+-keep class io.github.cdimascio.dotenv.** { *; }
 
-# Manter dotenv
--keep class io.github.cdimascio.** { *; }
-
-# Configurações gerais
--dontoptimize
--dontobfuscate
+# Warnings
 -dontwarn kotlin.**
 -dontwarn kotlinx.**
 -dontwarn org.jetbrains.**
+-dontwarn org.slf4j.**
 -dontwarn javax.**
 -dontwarn java.**
+-dontwarn io.ktor.**
 
-# Manter annotations
--keepattributes *Annotation*
--keepattributes Signature
--keepattributes InnerClasses
--keepattributes EnclosingMethod
+# Manter annotations necessárias
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,RuntimeVisibleAnnotations
 
-# Manter enums
--keepclassmembers enum * {
-    public static **[] values();
-    public static ** valueOf(java.lang.String);
-}
-
-# Manter Kotlin metadata
--keep class kotlin.Metadata { *; }
--keepclassmembers class kotlin.Metadata {
-    public <methods>;
-}
+# Enums
+-keepclassmembers enum * { *; }
