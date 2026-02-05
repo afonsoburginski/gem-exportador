@@ -33,12 +33,12 @@ jobs:
         shell: pwsh
       
       - name: Build MSI
-        run: ./gradlew packageReleaseMsi --parallel --build-cache -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
+        run: ./gradlew packageMsi --parallel --build-cache -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
         shell: bash
       
       - name: Create version.json
         run: |
-          $msi = (Get-ChildItem -Path "desktopApp/build/compose/binaries/main-release/msi" -Filter "*.msi" | Select-Object -First 1).Name
+          $msi = (Get-ChildItem -Path "desktopApp/build/compose/binaries/main/msi" -Filter "*.msi" | Select-Object -First 1).Name
           @"
           {"version":"${{ steps.get_version.outputs.VERSION }}","downloadUrl":"https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/$msi","releaseNotes":"Versao ${{ steps.get_version.outputs.VERSION }}","mandatory":false}
           "@ | Out-File -FilePath version.json -Encoding utf8
@@ -48,7 +48,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            desktopApp/build/compose/binaries/main-release/msi/*.msi
+            desktopApp/build/compose/binaries/main/msi/*.msi
             version.json
           generate_release_notes: true
         env:
