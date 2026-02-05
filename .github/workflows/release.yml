@@ -23,67 +23,33 @@ jobs:
           java-version: '17'
           cache: 'gradle'
       
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-        shell: bash
-      
       - name: Get version from tag
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
         shell: bash
       
-      - name: Update version in gradle.properties
-        run: |
-          (Get-Content gradle.properties) -replace 'app.version=.*', "app.version=${{ steps.get_version.outputs.VERSION }}" | Set-Content gradle.properties
+      - name: Update version
+        run: (Get-Content gradle.properties) -replace 'app.version=.*', "app.version=${{ steps.get_version.outputs.VERSION }}" | Set-Content gradle.properties
         shell: pwsh
       
-      - name: Build MSI (Release com ProGuard)
-        run: ./gradlew packageReleaseMsi --no-daemon
+      - name: Build MSI
+        run: ./gradlew packageReleaseMsi --parallel --build-cache -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
         shell: bash
-      
-      - name: List build output
-        run: |
-          echo "=== Listing MSI directory (release) ==="
-          Get-ChildItem -Path "desktopApp/build/compose/binaries/main-release/msi" -Recurse -ErrorAction SilentlyContinue
-          echo "=== Listing all binaries ==="
-          Get-ChildItem -Path "desktopApp/build/compose/binaries" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
-        shell: pwsh
-        continue-on-error: true
-      
-      - name: Find MSI file
-        id: find_msi
-        run: |
-          $msi = Get-ChildItem -Path "desktopApp/build/compose/binaries/main-release/msi" -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($msi) {
-            echo "MSI_PATH=$($msi.FullName)" >> $env:GITHUB_OUTPUT
-            echo "MSI_NAME=$($msi.Name)" >> $env:GITHUB_OUTPUT
-            echo "Found MSI: $($msi.FullName)"
-          } else {
-            echo "MSI not found!"
-            exit 1
-          }
-        shell: pwsh
       
       - name: Create version.json
         run: |
+          $msi = (Get-ChildItem -Path "desktopApp/build/compose/binaries/main-release/msi" -Filter "*.msi" | Select-Object -First 1).Name
           @"
-          {
-            "version": "${{ steps.get_version.outputs.VERSION }}",
-            "downloadUrl": "https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/${{ steps.find_msi.outputs.MSI_NAME }}",
-            "releaseNotes": "Versao ${{ steps.get_version.outputs.VERSION }}",
-            "mandatory": false
-          }
+          {"version":"${{ steps.get_version.outputs.VERSION }}","downloadUrl":"https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/$msi","releaseNotes":"Versao ${{ steps.get_version.outputs.VERSION }}","mandatory":false}
           "@ | Out-File -FilePath version.json -Encoding utf8
         shell: pwsh
       
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             desktopApp/build/compose/binaries/main-release/msi/*.msi
             version.json
           generate_release_notes: true
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
