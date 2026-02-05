@@ -8,7 +8,8 @@ import io.ktor.server.websocket.*
 import io.ktor.util.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import model.DesenhoAutodesk
+import kotlinx.serialization.json.jsonObject
+import org.postgresql.PGConnection
 import server.broadcast.Broadcast
 import server.db.Database
 import server.db.DesenhoDao
@@ -36,48 +37,13 @@ fun Application.configureStatusPages() {
     }
 }
 
-/*
- * ========== SEED DE TESTE (DESABILITADO PARA PRODUÇÃO) ==========
- * Para habilitar em desenvolvimento, descomente a chamada seedDatabase(desenhoDao) em configureRouting()
- * 
- * private fun seedDatabase(desenhoDao: DesenhoDao) {
- *     desenhoDao.deleteAll()
- *     val unico = DesenhoAutodesk(
- *         id = "6489ad02-603a-4608-b777-86a526afd438",
- *         nomeArquivo = "170000112_03.idw",
- *         computador = "SRVMTGEM1",
- *         caminhoDestino = "\\\\srvmtgem1\\Arquivos\$\\DESENHOS GERENCIADOR\\170",
- *         status = "pendente",
- *         posicaoFila = 1,
- *         horarioEnvio = "2026-01-29 17:01:30",
- *         horarioAtualizacao = "2026-01-29 17:01:30",
- *         formatosSolicitadosJson = """["pdf","dwf","dwg"]""",
- *         arquivoOriginal = "\\\\srvmtgem1\\Arquivos\$\\desenhos gerenciador 3D\\170\\170000112_03.idw",
- *         arquivosProcessadosJson = "[]",
- *         erro = null,
- *         progresso = 0,
- *         tentativas = 0,
- *         arquivosEnviadosParaUsuario = 0,
- *         canceladoEm = null,
- *         criadoEm = "2026-01-29 17:01:30",
- *         atualizadoEm = "2026-01-29 17:01:30",
- *         pastaProcessamento = null
- *     )
- *     desenhoDao.insert(unico)
- *     AppLog.info("Base seedada com 1 registro em pendente (170000112_03.idw)")
- * }
- * ================================================================
- */
-
 @OptIn(InternalAPI::class)
 fun Application.configureRouting() {
     val db = Database()
     db.init()
     val desenhoDao = DesenhoDao(db)
     
-    // PRODUÇÃO: Não faz seed, usa dados reais do banco
-    AppLog.info("Servidor gem-exportador iniciando em PRODUCAO; base de dados em data/gem-exportador.db")
-    // Para desenvolvimento/teste, descomente: seedDatabase(desenhoDao)
+    AppLog.info("Servidor gem-exportador iniciando em PRODUCAO com PostgreSQL")
     
     val broadcast = Broadcast()
     val queue = ProcessingQueue(desenhoDao, broadcast)
@@ -94,8 +60,8 @@ fun Application.configureRouting() {
         }
     }
     
-    // REALTIME: Monitora mudanças no arquivo do banco (como Supabase)
-    startDatabaseWatcher(db, desenhoDao, queue, broadcast)
+    // REALTIME: Usa PostgreSQL LISTEN/NOTIFY para detectar mudanças
+    startPostgresListener(db, desenhoDao, queue, broadcast)
 
     routing {
         apiHealth()
@@ -116,101 +82,100 @@ fun Application.configureWebSocket() {
 }
 
 /**
- * REALTIME DATABASE WATCHER
- * Monitora o arquivo do banco SQLite para detectar mudanças externas (via ODBC).
- * Similar ao realtime do Supabase - detecta INSERT/UPDATE quase instantaneamente.
+ * REALTIME DATABASE LISTENER (PostgreSQL LISTEN/NOTIFY)
+ * Usa o mecanismo nativo do PostgreSQL para detectar mudanças em tempo real.
+ * Muito mais eficiente que polling - recebe notificação instantânea.
  */
-private fun startDatabaseWatcher(
+private fun startPostgresListener(
     db: Database,
     desenhoDao: DesenhoDao,
     queue: ProcessingQueue,
     broadcast: Broadcast
 ) {
-    val dbPath = java.nio.file.Paths.get(db.getDatabasePath())
-    val dbDir = dbPath.parent
-    val dbFileName = dbPath.fileName.toString()
+    // Cache para debounce - evita processar notificações duplicadas
+    val lastProcessed = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    val debounceMs = 1000L // Ignora notificações do mesmo ID dentro de 1 segundo
     
-    // Cache do estado atual para detectar mudanças
-    val estadoConhecido = java.util.concurrent.ConcurrentHashMap<String, String>() // id -> status+atualizado_em
-    
-    // Carrega estado inicial
-    desenhoDao.list(limit = 10000, offset = 0).forEach { d ->
-        estadoConhecido[d.id] = "${d.status}|${d.atualizadoEm}"
-    }
+    // Cache de estado para detectar mudanças reais
+    val stateCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     
     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-        AppLog.info("Realtime watcher iniciado: monitorando $dbPath")
+        AppLog.info("[REALTIME] Iniciando listener PostgreSQL LISTEN/NOTIFY...")
         
-        try {
-            val watchService = java.nio.file.FileSystems.getDefault().newWatchService()
-            dbDir.register(
-                watchService,
-                java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY
-            )
-            
-            var ultimaVerificacao = System.currentTimeMillis()
-            
-            while (true) {
-                // Aguarda evento de modificação no diretório (timeout 500ms para não travar)
-                val key = watchService.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        // Carrega estado inicial
+        desenhoDao.list(limit = 10000, offset = 0).forEach { d ->
+            stateCache[d.id] = "${d.status}|${d.progresso}|${d.atualizadoEm}"
+        }
+        
+        while (true) {
+            try {
+                // Conexão dedicada para LISTEN (precisa ficar aberta)
+                val conn = db.connection()
+                val pgConn = conn.unwrap(PGConnection::class.java)
                 
-                if (key != null) {
-                    for (event in key.pollEvents()) {
-                        val fileName = event.context()?.toString() ?: continue
-                        // Verifica se é o arquivo do banco ou WAL
-                        if (fileName == dbFileName || fileName.startsWith(dbFileName)) {
-                            val agora = System.currentTimeMillis()
-                            // Debounce: só processa se passou 100ms desde última verificação
-                            if (agora - ultimaVerificacao > 100) {
-                                ultimaVerificacao = agora
-                                verificarMudancas(desenhoDao, queue, broadcast, estadoConhecido)
+                // Registra para receber notificações do canal 'desenho_changes'
+                conn.createStatement().execute("LISTEN desenho_changes")
+                AppLog.info("[REALTIME] Listener PostgreSQL ativo no canal 'desenho_changes'")
+                
+                while (!conn.isClosed) {
+                    // Verifica notificações (timeout de 500ms)
+                    val notifications = pgConn.getNotifications(500)
+                    
+                    if (notifications != null) {
+                        for (notification in notifications) {
+                            try {
+                                val payload = notification.parameter
+                                val json = kotlinx.serialization.json.Json.parseToJsonElement(payload)
+                                val op = json.jsonObject["op"]?.toString()?.replace("\"", "") ?: continue
+                                val id = json.jsonObject["id"]?.toString()?.replace("\"", "") ?: continue
+                                
+                                // Debounce: ignora se processou recentemente
+                                val now = System.currentTimeMillis()
+                                val lastTime = lastProcessed[id] ?: 0L
+                                if (now - lastTime < debounceMs) {
+                                    continue // Ignora notificação duplicada
+                                }
+                                lastProcessed[id] = now
+                                
+                                val desenho = desenhoDao.getById(id)
+                                if (desenho != null) {
+                                    // Verifica se houve mudança real
+                                    val newState = "${desenho.status}|${desenho.progresso}|${desenho.atualizadoEm}"
+                                    val oldState = stateCache[id]
+                                    
+                                    if (op == "INSERT" || oldState != newState) {
+                                        stateCache[id] = newState
+                                        AppLog.info("[REALTIME] $op: ${desenho.nomeArquivo} -> ${desenho.status}")
+                                        
+                                        when (op) {
+                                            "INSERT" -> {
+                                                broadcast.sendInsert(desenho)
+                                                if (desenho.status == "pendente") {
+                                                    queue.add(desenho.id)
+                                                    AppLog.info("[REALTIME] -> Adicionado à fila de processamento")
+                                                }
+                                            }
+                                            "UPDATE" -> {
+                                                broadcast.sendUpdate(desenho)
+                                            }
+                                        }
+                                    }
+                                } else if (op == "DELETE") {
+                                    stateCache.remove(id)
+                                    AppLog.info("[REALTIME] Registro deletado: $id")
+                                }
+                            } catch (e: Exception) {
+                                AppLog.error("[REALTIME] Erro ao processar notificação: ${e.message}")
                             }
                         }
                     }
-                    key.reset()
                 }
+                
+                conn.close()
+            } catch (e: Exception) {
+                AppLog.error("[REALTIME] Erro no listener, reconectando em 5s: ${e.message}")
+                kotlinx.coroutines.delay(5000)
             }
-        } catch (e: Exception) {
-            AppLog.error("Erro no watcher, usando fallback polling: ${e.message}")
-            // Fallback: polling a cada 500ms se watcher falhar
-            while (true) {
-                kotlinx.coroutines.delay(500)
-                try {
-                    verificarMudancas(desenhoDao, queue, broadcast, estadoConhecido)
-                } catch (e: Exception) {
-                    AppLog.error("Erro no polling: ${e.message}")
-                }
-            }
-        }
-    }
-}
-
-private suspend fun verificarMudancas(
-    desenhoDao: DesenhoDao,
-    queue: ProcessingQueue,
-    broadcast: Broadcast,
-    estadoConhecido: java.util.concurrent.ConcurrentHashMap<String, String>
-) {
-    val todos = desenhoDao.list(limit = 10000, offset = 0)
-    
-    for (desenho in todos) {
-        val estadoAtual = "${desenho.status}|${desenho.atualizadoEm}"
-        val estadoAnterior = estadoConhecido[desenho.id]
-        
-        if (estadoAnterior == null) {
-            // NOVO REGISTRO
-            estadoConhecido[desenho.id] = estadoAtual
-            AppLog.info("[REALTIME] Novo registro: ${desenho.nomeArquivo}")
-            broadcast.sendInsert(desenho)
-            if (desenho.status == "pendente") {
-                queue.add(desenho.id)
-                AppLog.info("[REALTIME] -> Adicionado à fila de processamento")
-            }
-        } else if (estadoAnterior != estadoAtual) {
-            // REGISTRO ATUALIZADO EXTERNAMENTE
-            estadoConhecido[desenho.id] = estadoAtual
-            AppLog.info("[REALTIME] Atualização externa: ${desenho.nomeArquivo} -> ${desenho.status}")
-            broadcast.sendUpdate(desenho)
         }
     }
 }

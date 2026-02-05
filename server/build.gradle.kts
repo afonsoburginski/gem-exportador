@@ -21,7 +21,7 @@ dependencies {
     implementation("io.ktor:ktor-server-websockets:${rootProject.extra["ktor.version"]}")
     implementation("io.ktor:ktor-server-status-pages:${rootProject.extra["ktor.version"]}")
     implementation("io.ktor:ktor-utils:${rootProject.extra["ktor.version"]}")
-    implementation("org.xerial:sqlite-jdbc:3.44.1.0")
+    implementation("org.postgresql:postgresql:42.7.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${rootProject.extra["coroutines.version"]}")
     implementation("io.github.cdimascio:dotenv-kotlin:6.4.1")
 }

@@ -76,16 +76,16 @@ class DesenhoRepository(
             computador = desenho.computador,
             caminho_destino = desenho.caminhoDestino,
             status = desenho.status,
-            posicao_fila = desenho.posicaoFila?.toLong(),
+            posicao_fila = desenho.posicaoFila,
             horario_envio = desenho.horarioEnvio,
             horario_atualizacao = desenho.horarioAtualizacao,
             formatos_solicitados = desenho.formatosSolicitadosJson,
             arquivo_original = desenho.arquivoOriginal,
             arquivos_processados = desenho.arquivosProcessadosJson,
             erro = desenho.erro,
-            progresso = desenho.progresso.toLong(),
-            tentativas = desenho.tentativas.toLong(),
-            arquivos_enviados_para_usuario = desenho.arquivosEnviadosParaUsuario.toLong(),
+            progresso = desenho.progresso,
+            tentativas = desenho.tentativas,
+            arquivos_enviados_para_usuario = desenho.arquivosEnviadosParaUsuario,
             cancelado_em = desenho.canceladoEm,
             criado_em = desenho.criadoEm ?: desenho.horarioEnvio,
             atualizado_em = desenho.atualizadoEm ?: desenho.horarioAtualizacao,
@@ -119,7 +119,7 @@ class DesenhoRepository(
      */
     fun updateProgresso(id: String, progresso: Int, horarioAtualizacao: String) {
         queries.updateProgresso(
-            progresso = progresso.toLong(),
+            progresso = progresso,
             horario_atualizacao = horarioAtualizacao,
             atualizado_em = horarioAtualizacao,
             id = id

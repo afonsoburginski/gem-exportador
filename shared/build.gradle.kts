@@ -84,8 +84,11 @@ kotlin {
                 // Ktor Desktop (JVM)
                 implementation("io.ktor:ktor-client-cio:${findProperty("ktor.version")}")
                 
-                // SQLDelight JVM
-                implementation("app.cash.sqldelight:sqlite-driver:${findProperty("sqldelight.version")}")
+                // SQLDelight JVM com driver JDBC genérico
+                implementation("app.cash.sqldelight:jdbc-driver:${findProperty("sqldelight.version")}")
+                
+                // PostgreSQL JDBC Driver
+                implementation("org.postgresql:postgresql:42.7.1")
                 
                 // Dotenv para ler .env
                 implementation("io.github.cdimascio:dotenv-kotlin:6.4.1")
@@ -94,11 +97,12 @@ kotlin {
     }
 }
 
-// SQLDelight configuration
+// SQLDelight configuration - PostgreSQL dialect
 sqldelight {
     databases {
         create("GemDatabase") {
             packageName.set("com.jhonrob.gemexportador.db")
+            dialect("app.cash.sqldelight:postgresql-dialect:${findProperty("sqldelight.version")}")
         }
     }
 }

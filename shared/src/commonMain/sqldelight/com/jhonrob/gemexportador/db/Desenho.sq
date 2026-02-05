@@ -1,5 +1,5 @@
--- Schema da tabela de desenhos
-CREATE TABLE desenho (
+-- Schema da tabela de desenhos (PostgreSQL)
+CREATE TABLE IF NOT EXISTS desenho (
     id TEXT NOT NULL PRIMARY KEY,
     nome_arquivo TEXT NOT NULL,
     computador TEXT NOT NULL,
@@ -21,11 +21,6 @@ CREATE TABLE desenho (
     pasta_processamento TEXT
 );
 
--- Índices para performance
-CREATE INDEX idx_desenho_status ON desenho(status);
-CREATE INDEX idx_desenho_computador ON desenho(computador);
-CREATE INDEX idx_desenho_horario_envio ON desenho(horario_envio);
-
 -- Queries
 
 selectAll:
@@ -41,12 +36,31 @@ selectPendentesEProcessando:
 SELECT * FROM desenho WHERE status IN ('pendente', 'processando') ORDER BY posicao_fila ASC, horario_envio ASC;
 
 insert:
-INSERT OR REPLACE INTO desenho(
+INSERT INTO desenho(
     id, nome_arquivo, computador, caminho_destino, status, posicao_fila,
     horario_envio, horario_atualizacao, formatos_solicitados, arquivo_original,
     arquivos_processados, erro, progresso, tentativas, arquivos_enviados_para_usuario,
     cancelado_em, criado_em, atualizado_em, pasta_processamento
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    nome_arquivo = EXCLUDED.nome_arquivo,
+    computador = EXCLUDED.computador,
+    caminho_destino = EXCLUDED.caminho_destino,
+    status = EXCLUDED.status,
+    posicao_fila = EXCLUDED.posicao_fila,
+    horario_envio = EXCLUDED.horario_envio,
+    horario_atualizacao = EXCLUDED.horario_atualizacao,
+    formatos_solicitados = EXCLUDED.formatos_solicitados,
+    arquivo_original = EXCLUDED.arquivo_original,
+    arquivos_processados = EXCLUDED.arquivos_processados,
+    erro = EXCLUDED.erro,
+    progresso = EXCLUDED.progresso,
+    tentativas = EXCLUDED.tentativas,
+    arquivos_enviados_para_usuario = EXCLUDED.arquivos_enviados_para_usuario,
+    cancelado_em = EXCLUDED.cancelado_em,
+    criado_em = EXCLUDED.criado_em,
+    atualizado_em = EXCLUDED.atualizado_em,
+    pasta_processamento = EXCLUDED.pasta_processamento;
 
 updateStatus:
 UPDATE desenho SET status = ?, horario_atualizacao = ?, atualizado_em = ? WHERE id = ?;

@@ -60,10 +60,29 @@ class DesenhoDao(private val database: Database) {
         
         database.connection().use { conn ->
             conn.prepareStatement("""
-                INSERT OR REPLACE INTO desenho (id, nome_arquivo, computador, caminho_destino, status, posicao_fila,
+                INSERT INTO desenho (id, nome_arquivo, computador, caminho_destino, status, posicao_fila,
                     horario_envio, horario_atualizacao, formatos_solicitados, arquivo_original, arquivos_processados,
                     erro, progresso, tentativas, arquivos_enviados_para_usuario, cancelado_em, criado_em, atualizado_em, pasta_processamento)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    nome_arquivo = EXCLUDED.nome_arquivo,
+                    computador = EXCLUDED.computador,
+                    caminho_destino = EXCLUDED.caminho_destino,
+                    status = EXCLUDED.status,
+                    posicao_fila = EXCLUDED.posicao_fila,
+                    horario_envio = EXCLUDED.horario_envio,
+                    horario_atualizacao = EXCLUDED.horario_atualizacao,
+                    formatos_solicitados = EXCLUDED.formatos_solicitados,
+                    arquivo_original = EXCLUDED.arquivo_original,
+                    arquivos_processados = EXCLUDED.arquivos_processados,
+                    erro = EXCLUDED.erro,
+                    progresso = EXCLUDED.progresso,
+                    tentativas = EXCLUDED.tentativas,
+                    arquivos_enviados_para_usuario = EXCLUDED.arquivos_enviados_para_usuario,
+                    cancelado_em = EXCLUDED.cancelado_em,
+                    criado_em = EXCLUDED.criado_em,
+                    atualizado_em = EXCLUDED.atualizado_em,
+                    pasta_processamento = EXCLUDED.pasta_processamento
             """.trimIndent()).use { stmt ->
                 bindDesenho(stmt, desenhoComId)
                 stmt.executeUpdate()

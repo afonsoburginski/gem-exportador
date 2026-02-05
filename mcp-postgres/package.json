@@ -1,7 +1,7 @@
 {
-  "name": "gem-exportador-mcp-sqlite",
+  "name": "gem-exportador-mcp-postgres",
   "version": "1.0.0",
-  "description": "MCP server para acessar o SQLite do gem-exportador",
+  "description": "MCP server para acessar o PostgreSQL do gem-exportador",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "better-sqlite3": "^11.0.0"
+    "pg": "^8.11.3",
+    "zod": "^3.22.4"
   }
 }

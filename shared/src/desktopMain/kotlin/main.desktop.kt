@@ -11,7 +11,7 @@ import kotlin.system.exitProcess
 
 actual fun getPlatformName(): String = "Desktop"
 actual fun getServerBaseUrl(): String? = DesktopConfig.serverUrl
-actual fun getSqliteDatabasePath(): String? = DatabaseDriverFactory.getDatabasePath()
+actual fun getSqliteDatabasePath(): String? = DatabaseDriverFactory.getConnectionInfo()
 
 actual suspend fun checkForUpdates(): VersionInfo? {
     return try {

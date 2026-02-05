@@ -19,11 +19,15 @@ object Config {
     val inventorPastaControle: String? get() = get("INVENTOR_PASTA_CONTROLE", "").ifBlank { null }
     val logLevel: String get() = get("LOG_LEVEL", "INFO")
 
-    /** Pasta do banco de dados SQLite (padrão: ./database) */
-    val databaseDir: File get() {
-        val path = get("DATABASE_DIR", "")
-        return if (path.isNotBlank()) File(path) else File(System.getProperty("user.dir"), "database")
-    }
+    // Configurações do PostgreSQL
+    val dbHost: String get() = get("DB_HOST", "localhost")
+    val dbPort: Int get() = get("DB_PORT", "5432").toIntOrNull() ?: 5432
+    val dbName: String get() = get("DB_NAME", "gem_exportador")
+    val dbUser: String get() = get("DB_USER", "postgres")
+    val dbPassword: String get() = get("DB_PASSWORD", "postgres")
+    
+    /** URL JDBC para conexão com PostgreSQL */
+    val jdbcUrl: String get() = "jdbc:postgresql://$dbHost:$dbPort/$dbName"
 
     /** Pasta dos logs (padrão: ./logs) */
     val logDir: File get() {
