@@ -39,22 +39,11 @@ compose.desktop {
         }
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Msi)
             packageName = appName
             packageVersion = appVersion
             description = "Exportador de desenhos Autodesk Inventor"
             vendor = "JhonRob"
-            
-            // Módulos JRE mínimos necessários
-            modules(
-                "java.base",
-                "java.desktop",
-                "java.logging",
-                "java.naming",
-                "java.net.http",
-                "java.sql",
-                "jdk.unsupported"
-            )
             
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/favicon.ico"))
@@ -62,7 +51,6 @@ compose.desktop {
                 upgradeUuid = "8F3B1A2C-5D4E-6F7A-8B9C-0D1E2F3A4B5C"
                 shortcut = true
                 dirChooser = true
-                perUserInstall = false
                 menu = true
             }
         }
