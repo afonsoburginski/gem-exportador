@@ -1,7 +1,5 @@
 package ui.components
 
-import androidx.compose.foundation.ContextMenuArea
-import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,12 +8,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -215,10 +219,11 @@ private fun Toolbar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (mostrarConcluidos) {
-                    Text(
-                        text = "✓",
-                        color = AppColors.BadgeGreen,
-                        fontSize = 12.sp
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "Ativo",
+                        tint = AppColors.BadgeGreen,
+                        modifier = Modifier.size(14.dp)
                     )
                 }
                 Text(
@@ -262,17 +267,19 @@ private fun TableHeader(isCompact: Boolean = false) {
         modifier = Modifier
             .fillMaxWidth()
             .background(AppColors.SurfaceVariant)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+
+            .padding(horizontal = if (isCompact) 8.dp else 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         HeaderCell(text = "ARQUIVO", modifier = Modifier.weight(1.0f))
-        HeaderCell(text = "FORMATOS", modifier = Modifier.weight(if (isCompact) 1.2f else 1.5f))
+        HeaderCell(text = "FORMATOS", modifier = Modifier.weight(if (isCompact) 1.0f else 1.5f))
         if (!isCompact) {
             HeaderCell(text = "COMPUTADOR", modifier = Modifier.weight(0.8f))
             HeaderCell(text = "PASTA", modifier = Modifier.weight(1.8f))
+            HeaderCell(text = "ENVIADO", modifier = Modifier.weight(0.8f))
         }
-        HeaderCell(text = "ENVIADO", modifier = Modifier.weight(if (isCompact) 0.6f else 0.8f))
-        HeaderCell(text = "AÇÕES", modifier = Modifier.weight(0.3f))
+        // Em modo compacto, usa ícone em vez de texto para AÇÕES
+        HeaderCell(text = if (isCompact) "" else "AÇÕES", modifier = Modifier.weight(if (isCompact) 0.2f else 0.3f))
     }
 }
 
@@ -288,39 +295,53 @@ private fun HeaderCell(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun TableRowWithContextMenu(
     desenho: DesenhoAutodesk,
     actions: DesenhoActions,
     isCompact: Boolean = false
 ) {
-    val status = desenho.statusEnum
-    val podeRetry = status == DesenhoStatus.ERRO || status == DesenhoStatus.CANCELADO || status == DesenhoStatus.CONCLUIDO_COM_ERROS
-    val podeCancelar = status == DesenhoStatus.PENDENTE || status == DesenhoStatus.PROCESSANDO
-
-    val contextMenuItems = buildList {
-        if (podeRetry) add(ContextMenuItem("↻ Reenviar") { actions.onRetry(desenho) })
-        if (podeCancelar) add(ContextMenuItem("✕ Cancelar") { actions.onCancel(desenho) })
-    }
-
-    ContextMenuArea(
-        items = { contextMenuItems }
-    ) {
+    var showMenu by remember { mutableStateOf(false) }
+    
+    Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(AppColors.Surface)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null
+                ) { }
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.type == PointerEventType.Press &&
+                                event.button == PointerButton.Secondary) {
+                                showMenu = true
+                            }
+                        }
+                    }
+                }
+                .padding(horizontal = if (isCompact) 8.dp else 16.dp, vertical = if (isCompact) 10.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ArquivoCell(desenho, modifier = Modifier.weight(1.0f))
-            FormatosCell(desenho, modifier = Modifier.weight(if (isCompact) 1.2f else 1.5f), isCompact = isCompact)
+            ArquivoCell(desenho, modifier = Modifier.weight(1.0f), isCompact = isCompact)
+            FormatosCell(desenho, modifier = Modifier.weight(if (isCompact) 1.0f else 1.5f), isCompact = isCompact)
             if (!isCompact) {
                 ComputadorCell(desenho.computador, modifier = Modifier.weight(0.8f))
                 PastaCell(desenho, modifier = Modifier.weight(1.8f))
+                EnviadoCell(desenho.horarioEnvio, modifier = Modifier.weight(0.8f), isCompact = isCompact)
             }
-            EnviadoCell(desenho.horarioEnvio, modifier = Modifier.weight(if (isCompact) 0.6f else 0.8f), isCompact = isCompact)
-            AcoesCell(desenho, actions, modifier = Modifier.weight(0.3f))
+            AcoesCell(
+                desenho = desenho,
+                actions = actions,
+                modifier = Modifier.weight(if (isCompact) 0.2f else 0.3f),
+                isCompact = isCompact,
+                showMenuExternal = showMenu,
+                onMenuDismiss = { showMenu = false }
+            )
         }
     }
 }
@@ -329,65 +350,157 @@ private fun TableRowWithContextMenu(
 private fun AcoesCell(
     desenho: DesenhoAutodesk,
     actions: DesenhoActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false,
+    showMenuExternal: Boolean = false,
+    onMenuDismiss: () -> Unit = {}
 ) {
     var showDropdown by remember { mutableStateOf(false) }
     val status = desenho.statusEnum
     val podeRetry = status == DesenhoStatus.ERRO || status == DesenhoStatus.CANCELADO || status == DesenhoStatus.CONCLUIDO_COM_ERROS
     val podeCancelar = status == DesenhoStatus.PENDENTE || status == DesenhoStatus.PROCESSANDO
-    val temAcoes = podeRetry || podeCancelar
+    
+    // Sincroniza com menu externo (botão direito)
+    LaunchedEffect(showMenuExternal) {
+        if (showMenuExternal) showDropdown = true
+    }
 
     Box(
         modifier = modifier,
         contentAlignment = Alignment.CenterStart
     ) {
-        // Sempre mostrar os 3 pontinhos; ao clicar abre o dropdown
+        // Botão 3 pontinhos
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(5.dp))
-                .border(
-                    1.dp,
-                    if (temAcoes) AppColors.Border else AppColors.Border.copy(alpha = 0.5f),
-                    RoundedCornerShape(5.dp)
-                )
-                .clickable(enabled = true) { showDropdown = true }
+                .clip(RoundedCornerShape(6.dp))
+                .background(AppColors.SurfaceVariant)
+                .border(1.dp, AppColors.Border, RoundedCornerShape(6.dp))
+                .clickable { showDropdown = true }
                 .pointerHoverIcon(PointerIcon.Hand)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "⋯",
-                color = if (temAcoes) AppColors.TextPrimary else AppColors.TextSecondary,
-                fontSize = 14.sp
+                text = "⋮",
+                color = AppColors.TextPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
             )
         }
+        
+        // Menu dropdown estilizado
         DropdownMenu(
             expanded = showDropdown,
-            onDismissRequest = { showDropdown = false }
+            onDismissRequest = { 
+                showDropdown = false
+                onMenuDismiss()
+            },
+            modifier = Modifier
+                .background(AppColors.Surface)
+                .border(1.dp, AppColors.Border, RoundedCornerShape(8.dp))
+                .widthIn(min = 220.dp)
         ) {
-            if (podeRetry) {
-                DropdownMenuItem(
-                    onClick = {
-                        actions.onRetry(desenho)
-                        showDropdown = false
-                    }
-                ) {
-                    Text("↻ Reenviar", color = AppColors.TextPrimary, fontSize = 14.sp)
-                }
+            // Header com nome do arquivo
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(AppColors.SurfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = desenho.nomeArquivo,
+                    color = AppColors.TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            if (podeCancelar) {
-                DropdownMenuItem(
-                    onClick = {
-                        actions.onCancel(desenho)
-                        showDropdown = false
-                    }
-                ) {
-                    Text("✕ Cancelar", color = AppColors.BadgeRed, fontSize = 14.sp)
-                }
+            
+            Divider(color = AppColors.Border)
+            
+            // Data de envio
+            val horarioFormatado = desenho.horarioEnvio
+                .replace(Regex(":\\d{2}\\..*"), "")
+                .replace(Regex("\\+\\d{2}$"), "")
+            
+            MenuItemStyled(
+                icon = Icons.Filled.Schedule,
+                label = "Enviado",
+                value = horarioFormatado.ifEmpty { "—" },
+                onClick = { showDropdown = false; onMenuDismiss() }
+            )
+            
+            // Computador
+            if (desenho.computador.isNotEmpty()) {
+                MenuItemStyled(
+                    icon = Icons.Filled.Computer,
+                    label = "Computador",
+                    value = desenho.computador,
+                    onClick = { showDropdown = false; onMenuDismiss() }
+                )
             }
-            if (!temAcoes) {
-                DropdownMenuItem(onClick = { showDropdown = false }) {
-                    Text("Nenhuma ação", color = AppColors.TextSecondary, fontSize = 14.sp)
+            
+            Divider(color = AppColors.Border, modifier = Modifier.padding(vertical = 4.dp))
+            
+            // Origem
+            desenho.pastaOrigem?.takeIf { it.isNotEmpty() }?.let { origem ->
+                MenuItemStyled(
+                    icon = Icons.Filled.FolderOpen,
+                    label = "Abrir Origem",
+                    value = truncatePath(origem, 35),
+                    isClickable = true,
+                    onClick = { 
+                        openInExplorer(origem)
+                        showDropdown = false
+                        onMenuDismiss()
+                    }
+                )
+            }
+            
+            // Destino
+            desenho.caminhoDestino.takeIf { it.isNotEmpty() }?.let { destino ->
+                MenuItemStyled(
+                    icon = Icons.Filled.Folder,
+                    label = "Abrir Destino",
+                    value = truncatePath(destino, 35),
+                    isClickable = true,
+                    onClick = { 
+                        openInExplorer(destino)
+                        showDropdown = false
+                        onMenuDismiss()
+                    }
+                )
+            }
+            
+            // Ações
+            if (podeRetry || podeCancelar) {
+                Divider(color = AppColors.Border, modifier = Modifier.padding(vertical = 4.dp))
+                
+                if (podeRetry) {
+                    MenuItemStyled(
+                        icon = Icons.Filled.Refresh,
+                        label = "Reenviar",
+                        isAction = true,
+                        onClick = {
+                            actions.onRetry(desenho)
+                            showDropdown = false
+                            onMenuDismiss()
+                        }
+                    )
+                }
+                if (podeCancelar) {
+                    MenuItemStyled(
+                        icon = Icons.Filled.Close,
+                        label = "Cancelar",
+                        isAction = true,
+                        isDestructive = true,
+                        onClick = {
+                            actions.onCancel(desenho)
+                            showDropdown = false
+                            onMenuDismiss()
+                        }
+                    )
                 }
             }
         }
@@ -395,11 +508,85 @@ private fun AcoesCell(
 }
 
 @Composable
-private fun ArquivoCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier) {
+private fun MenuItemStyled(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String? = null,
+    isClickable: Boolean = false,
+    isAction: Boolean = false,
+    isDestructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    val iconColor = when {
+        isDestructive -> AppColors.BadgeRed
+        isClickable -> AppColors.Primary
+        isAction -> AppColors.TextPrimary
+        else -> AppColors.TextSecondary
+    }
+    
+    val textColor = when {
+        isDestructive -> AppColors.BadgeRed
+        isClickable -> AppColors.Primary
+        isAction -> AppColors.TextPrimary
+        else -> AppColors.TextPrimary // Cor mais clara para valores
+    }
+    
+    val labelColor = when {
+        isAction -> textColor
+        else -> AppColors.TextSecondary // Cor mais visível para labels
+    }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .pointerHoverIcon(if (isClickable || isAction) PointerIcon.Hand else PointerIcon.Default)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = iconColor,
+            modifier = Modifier.size(16.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = labelColor,
+                fontSize = if (isAction) 13.sp else 11.sp,
+                fontWeight = if (isAction) FontWeight.Medium else FontWeight.Normal
+            )
+            if (value != null) {
+                Text(
+                    text = value,
+                    color = textColor,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (isClickable) TextDecoration.Underline else TextDecoration.None
+                )
+            }
+        }
+        if (isClickable) {
+            Icon(
+                imageVector = Icons.Filled.OpenInNew,
+                contentDescription = "Abrir",
+                tint = AppColors.TextSecondary,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ArquivoCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier, isCompact: Boolean = false) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         val status = desenho.statusEnum
         
@@ -409,7 +596,7 @@ private fun ArquivoCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier)
             Text(
                 text = "#${desenho.posicaoFila}",
                 color = AppColors.TextMuted,
-                fontSize = 12.sp,
+                fontSize = if (isCompact) 10.sp else 12.sp,
                 fontFamily = FontFamily.Monospace
             )
         }
@@ -418,7 +605,7 @@ private fun ArquivoCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier)
         Text(
             text = desenho.nomeArquivo.ifEmpty { "—" },
             color = AppColors.TextPrimary,
-            fontSize = 14.sp,
+            fontSize = if (isCompact) 12.sp else 14.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -438,14 +625,14 @@ private fun FormatosCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier
     
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (isCompact) 3.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (formatos.isEmpty()) {
             Text(
                 text = "—",
                 color = AppColors.TextMuted,
-                fontSize = 14.sp
+                fontSize = if (isCompact) 12.sp else 14.sp
             )
         } else {
             formatos.forEachIndexed { idx, formato ->
@@ -458,7 +645,8 @@ private fun FormatosCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier
                     gerado = gerado,
                     status = status,
                     emProcessamento = mostrarSpinner,
-                    progresso = progresso
+                    progresso = progresso,
+                    isCompact = isCompact
                 )
             }
         }
@@ -471,7 +659,8 @@ private fun FormatoBadge(
     gerado: Boolean,
     status: DesenhoStatus,
     emProcessamento: Boolean = false,
-    progresso: Int = 0
+    progresso: Int = 0,
+    isCompact: Boolean = false
 ) {
     val (bgColor, textColor, borderColor) = when {
         gerado -> Triple(AppColors.BadgeGreenBg, AppColors.BadgeGreen, AppColors.BadgeGreen.copy(alpha = 0.5f))
@@ -485,21 +674,22 @@ private fun FormatoBadge(
     
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(if (isCompact) 3.dp else 4.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .border(1.dp, borderColor, RoundedCornerShape(if (isCompact) 3.dp else 4.dp))
+            .padding(horizontal = if (isCompact) 4.dp else 6.dp, vertical = if (isCompact) 1.dp else 2.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(if (isCompact) 2.dp else 4.dp)
     ) {
         if (gerado) {
-            Text(
-                text = "✓",
-                color = textColor,
-                fontSize = 10.sp
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = "Concluído",
+                tint = textColor,
+                modifier = Modifier.size(if (isCompact) 10.dp else 12.dp)
             )
         }
-        if (emProcessamento) {
+        if (emProcessamento && !isCompact) {
             CircularProgressIndicator(
                 modifier = Modifier.size(12.dp),
                 strokeWidth = 1.5.dp,
@@ -515,7 +705,7 @@ private fun FormatoBadge(
         Text(
             text = formato.uppercase(),
             color = textColor,
-            fontSize = 11.sp,
+            fontSize = if (isCompact) 9.sp else 11.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Medium
         )

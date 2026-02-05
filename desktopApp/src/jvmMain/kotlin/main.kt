@@ -58,7 +58,7 @@ fun main() {
             onCloseRequest = ::exitApplication
         ) {
             // Define tamanho mínimo da janela
-            window.minimumSize = java.awt.Dimension(800, 500)
+            window.minimumSize = java.awt.Dimension(380, 300)
             
             // Aplica dark title bar após a janela ser exibida
             LaunchedEffect(Unit) {
