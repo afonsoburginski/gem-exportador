@@ -97,14 +97,14 @@ Section "Install"
   CreateShortCut "$DESKTOP\${APP_NAME}.lnk" \
     "$INSTDIR\launch.cmd" "" \
     "$INSTDIR\${APP_NAME}.ico" 0 \
-    SW_SHOWMINNOACTIVE
+    SW_SHOWMINIMIZED
 
   ; Shortcuts no Menu Iniciar
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" \
     "$INSTDIR\launch.cmd" "" \
     "$INSTDIR\${APP_NAME}.ico" 0 \
-    SW_SHOWMINNOACTIVE
+    SW_SHOWMINIMIZED
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\Desinstalar ${APP_NAME}.lnk" \
     "$INSTDIR\uninstall.exe"
 
