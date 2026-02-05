@@ -76,6 +76,23 @@ Section "Install"
   ; Volta para INSTDIR (working dir dos shortcuts)
   SetOutPath "$INSTDIR"
 
+  ; Cria pastas de dados em local com permissoes de escrita
+  CreateDirectory "C:\gem-exportador"
+  CreateDirectory "C:\gem-exportador\database"
+  CreateDirectory "C:\gem-exportador\logs"
+  CreateDirectory "C:\gem-exportador\controle"
+
+  ; Cria arquivo .env com configuracao padrao
+  FileOpen $0 "$INSTDIR\.env" w
+  FileWrite $0 'SERVER_HOST=127.0.0.1$\r$\n'
+  FileWrite $0 'SERVER_PORT=8080$\r$\n'
+  FileWrite $0 'SERVER_URL=http://localhost:8080$\r$\n'
+  FileWrite $0 'INVENTOR_PASTA_CONTROLE=C:\gem-exportador\controle$\r$\n'
+  FileWrite $0 'DATABASE_DIR=C:\gem-exportador\database$\r$\n'
+  FileWrite $0 'LOG_LEVEL=INFO$\r$\n'
+  FileWrite $0 'LOG_DIR=C:\gem-exportador\logs$\r$\n'
+  FileClose $0
+
   ; Cria script de lancamento (evita limite de 260 chars em shortcut)
   FileOpen $0 "$INSTDIR\launch.cmd" w
   FileWrite $0 '@echo off$\r$\n'
@@ -133,10 +150,19 @@ Section "Uninstall"
   ; Remove arquivos
   RMDir /r "$INSTDIR\app"
   RMDir /r "$INSTDIR\runtime"
+  RMDir /r "$INSTDIR\database"
+  RMDir /r "$INSTDIR\logs"
   Delete "$INSTDIR\${APP_NAME}.ico"
   Delete "$INSTDIR\launch.cmd"
+  Delete "$INSTDIR\.env"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
+  
+  ; Pergunta se deseja remover dados do usuario
+  MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover os dados do aplicativo (banco de dados e logs)?" IDYES removedata IDNO skipdata
+  removedata:
+    RMDir /r "C:\gem-exportador"
+  skipdata:
 
   ; Remove shortcuts
   Delete "$DESKTOP\${APP_NAME}.lnk"
