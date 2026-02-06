@@ -62,27 +62,54 @@ del /f /q "%TEMP%\postgresql-binaries.zip" >nul 2>&1
 del /f /q "%TEMP%\pgsql-*.zip" >nul 2>&1
 
 echo       Baixando para %PG_ZIP%...
-curl.exe -L -o "%PG_ZIP%" "%PG_URL%"
-if %errorlevel% neq 0 (
-    echo       ERRO: Falha ao baixar PostgreSQL!
-    echo       Verifique sua conexao com a internet.
-    exit /b 1
-)
 
-:: Verifica se o arquivo foi baixado e tem tamanho > 0
-if not exist "%PG_ZIP%" (
-    echo       ERRO: Arquivo nao foi baixado!
-    exit /b 1
-)
-
+:: Metodo 1: curl com flags robustas
+echo       Tentando download via curl...
+curl.exe -L -k --ssl-no-revoke --retry 3 --retry-delay 5 -A "Mozilla/5.0" -o "%PG_ZIP%" "%PG_URL%" 2>&1
+if %errorlevel% neq 0 goto :try_powershell
 for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
-if "%FILE_SIZE%"=="0" (
-    echo       ERRO: Arquivo baixado esta vazio!
-    del /f "%PG_ZIP%" >nul 2>&1
-    exit /b 1
-)
+if "!FILE_SIZE!"=="" goto :try_powershell
+if !FILE_SIZE! lss 1000000 goto :try_powershell
+echo       Download via curl concluido (!FILE_SIZE! bytes)
+goto :download_ok
 
-echo       Download concluido (%FILE_SIZE% bytes)
+:: Metodo 2: PowerShell WebClient (mais compativel)
+:try_powershell
+echo       curl falhou. Tentando via PowerShell...
+del /f "%PG_ZIP%" >nul 2>&1
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $wc.Headers.Add('User-Agent', 'Mozilla/5.0'); $wc.DownloadFile('%PG_URL%', '%PG_ZIP%')" 2>&1
+if %errorlevel% neq 0 goto :try_bits
+for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
+if "!FILE_SIZE!"=="" goto :try_bits
+if !FILE_SIZE! lss 1000000 goto :try_bits
+echo       Download via PowerShell concluido (!FILE_SIZE! bytes)
+goto :download_ok
+
+:: Metodo 3: BITS (Background Intelligent Transfer Service)
+:try_bits
+echo       PowerShell falhou. Tentando via BITS...
+del /f "%PG_ZIP%" >nul 2>&1
+powershell -Command "Start-BitsTransfer -Source '%PG_URL%' -Destination '%PG_ZIP%'" 2>&1
+if %errorlevel% neq 0 goto :download_fail
+for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
+if "!FILE_SIZE!"=="" goto :download_fail
+if !FILE_SIZE! lss 1000000 goto :download_fail
+echo       Download via BITS concluido (!FILE_SIZE! bytes)
+goto :download_ok
+
+:download_fail
+echo.
+echo       =============================================
+echo       ERRO: Nao foi possivel baixar PostgreSQL!
+echo       Baixe manualmente de:
+echo       https://www.enterprisedb.com/download-postgresql-binaries
+echo       Extraia o conteudo em C:\gem-exportador\pgsql
+echo       e execute novamente o instalador.
+echo       =============================================
+del /f "%PG_ZIP%" >nul 2>&1
+exit /b 1
+
+:download_ok
 
 :: ============================================
 :: 3. Extrair PostgreSQL
