@@ -11,7 +11,7 @@ O GEM Exportador é uma aplicação multiplataforma que automatiza a conversão 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   Inventor      │     │    Servidor     │     │   App Desktop   │
-│   (Macro VBA)   │────▶│   (Ktor HTTP)   │◀────│   (Compose)     │
+│   (Macro VBA)   │───▶ │   (Ktor HTTP)   |◀───│   (Compose)     │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                  │
                         ┌────────▼────────┐
