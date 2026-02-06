@@ -29,9 +29,10 @@ class Database {
                         CREATE TABLE IF NOT EXISTS desenho (
                             id TEXT NOT NULL PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
                             nome_arquivo TEXT NOT NULL,
-                            computador TEXT NOT NULL DEFAULT '',
-                            caminho_destino TEXT NOT NULL DEFAULT '',
-                            status TEXT NOT NULL DEFAULT 'pendente',
+                            computador TEXT NOT NULL,
+                            caminho_destino TEXT NOT NULL,
+                            status TEXT NOT NULL DEFAULT 'pendente'
+                                CHECK (status = ANY (ARRAY['pendente'::TEXT, 'processando'::TEXT, 'concluido'::TEXT, 'concluido_com_erros'::TEXT, 'erro'::TEXT, 'cancelado'::TEXT])),
                             posicao_fila INTEGER,
                             horario_envio TIMESTAMPTZ NOT NULL DEFAULT now(),
                             horario_atualizacao TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -39,9 +40,11 @@ class Database {
                             arquivo_original TEXT,
                             arquivos_processados TEXT,
                             erro TEXT,
-                            progresso INTEGER DEFAULT 0,
+                            progresso INTEGER DEFAULT 0
+                                CHECK (progresso >= 0 AND progresso <= 100),
                             tentativas INTEGER NOT NULL DEFAULT 0,
-                            arquivos_enviados_para_usuario INTEGER DEFAULT 0,
+                            arquivos_enviados_para_usuario INTEGER DEFAULT 0
+                                CHECK (arquivos_enviados_para_usuario = ANY (ARRAY[0, 1])),
                             cancelado_em TIMESTAMPTZ,
                             criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
                             atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
