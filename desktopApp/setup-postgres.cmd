@@ -50,66 +50,54 @@ if exist "%PG_DIR%\bin\pg_ctl.exe" (
 )
 
 :: ============================================
-:: 2. Download PostgreSQL
+:: 2. Instalar Chocolatey + Download PostgreSQL
 :: ============================================
-echo [2/6] Baixando PostgreSQL 16 (pode levar alguns minutos)...
+echo [2/6] Preparando download do PostgreSQL 16...
 
-:: Usa nome unico para evitar conflito com arquivo travado
+:: Instala Chocolatey se nao existir
+where choco >nul 2>&1
+if %errorlevel% neq 0 (
+    echo       Instalando Chocolatey...
+    powershell -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))" 2>&1
+    :: Atualiza PATH para encontrar choco
+    set "PATH=%ALLUSERSPROFILE%\chocolatey\bin;%PATH%"
+)
+
+:: Instala wget via Chocolatey se nao existir
+where wget >nul 2>&1
+if %errorlevel% neq 0 (
+    echo       Instalando wget...
+    choco install wget -y --no-progress 2>&1
+    set "PATH=%ALLUSERSPROFILE%\chocolatey\bin;%PATH%"
+)
+
+:: Download PostgreSQL via wget
 set PG_ZIP=%TEMP%\pgsql-%RANDOM%%RANDOM%.zip
 
-:: Tenta limpar downloads anteriores travados
-del /f /q "%TEMP%\postgresql-binaries.zip" >nul 2>&1
+:: Limpa downloads anteriores
 del /f /q "%TEMP%\pgsql-*.zip" >nul 2>&1
 
-echo       Baixando para %PG_ZIP%...
+echo       Baixando PostgreSQL 16 (pode levar alguns minutos)...
+wget --no-check-certificate -O "%PG_ZIP%" "%PG_URL%" 2>&1
+if %errorlevel% neq 0 (
+    echo       ERRO: Falha ao baixar PostgreSQL!
+    del /f "%PG_ZIP%" >nul 2>&1
+    exit /b 1
+)
 
-:: Metodo 1: curl com flags robustas
-echo       Tentando download via curl...
-curl.exe -L -k --ssl-no-revoke --retry 3 --retry-delay 5 -A "Mozilla/5.0" -o "%PG_ZIP%" "%PG_URL%" 2>&1
-if %errorlevel% neq 0 goto :try_powershell
+:: Verifica se baixou com tamanho valido
 for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
-if "!FILE_SIZE!"=="" goto :try_powershell
-if !FILE_SIZE! lss 1000000 goto :try_powershell
-echo       Download via curl concluido (!FILE_SIZE! bytes)
-goto :download_ok
+if "!FILE_SIZE!"=="" (
+    echo       ERRO: Arquivo nao foi baixado!
+    exit /b 1
+)
+if !FILE_SIZE! lss 1000000 (
+    echo       ERRO: Arquivo baixado muito pequeno (!FILE_SIZE! bytes)
+    del /f "%PG_ZIP%" >nul 2>&1
+    exit /b 1
+)
 
-:: Metodo 2: PowerShell WebClient (mais compativel)
-:try_powershell
-echo       curl falhou. Tentando via PowerShell...
-del /f "%PG_ZIP%" >nul 2>&1
-powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $wc.Headers.Add('User-Agent', 'Mozilla/5.0'); $wc.DownloadFile('%PG_URL%', '%PG_ZIP%')" 2>&1
-if %errorlevel% neq 0 goto :try_bits
-for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
-if "!FILE_SIZE!"=="" goto :try_bits
-if !FILE_SIZE! lss 1000000 goto :try_bits
-echo       Download via PowerShell concluido (!FILE_SIZE! bytes)
-goto :download_ok
-
-:: Metodo 3: BITS (Background Intelligent Transfer Service)
-:try_bits
-echo       PowerShell falhou. Tentando via BITS...
-del /f "%PG_ZIP%" >nul 2>&1
-powershell -Command "Start-BitsTransfer -Source '%PG_URL%' -Destination '%PG_ZIP%'" 2>&1
-if %errorlevel% neq 0 goto :download_fail
-for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
-if "!FILE_SIZE!"=="" goto :download_fail
-if !FILE_SIZE! lss 1000000 goto :download_fail
-echo       Download via BITS concluido (!FILE_SIZE! bytes)
-goto :download_ok
-
-:download_fail
-echo.
-echo       =============================================
-echo       ERRO: Nao foi possivel baixar PostgreSQL!
-echo       Baixe manualmente de:
-echo       https://www.enterprisedb.com/download-postgresql-binaries
-echo       Extraia o conteudo em C:\gem-exportador\pgsql
-echo       e execute novamente o instalador.
-echo       =============================================
-del /f "%PG_ZIP%" >nul 2>&1
-exit /b 1
-
-:download_ok
+echo       Download concluido (!FILE_SIZE! bytes)
 
 :: ============================================
 :: 3. Extrair PostgreSQL
