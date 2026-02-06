@@ -43,6 +43,45 @@ jobs:
           }
         shell: pwsh
 
+      - name: Download PostgreSQL binaries
+        run: |
+          Write-Host "Downloading PostgreSQL 16 binaries..."
+          $pgUrl = "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip"
+          $pgZip = "$env:RUNNER_TEMP\pgsql.zip"
+          $destDir = "desktopApp\pgsql-bundle"
+
+          # Download com retry
+          $retries = 3
+          for ($i = 1; $i -le $retries; $i++) {
+            try {
+              Write-Host "Tentativa $i/$retries..."
+              [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+              (New-Object Net.WebClient).DownloadFile($pgUrl, $pgZip)
+              $size = (Get-Item $pgZip).Length
+              Write-Host "Download concluido: $([math]::Round($size/1MB)) MB"
+              break
+            } catch {
+              Write-Host "Erro: $_"
+              if ($i -eq $retries) { throw "Falha ao baixar PostgreSQL apos $retries tentativas" }
+              Start-Sleep -Seconds 10
+            }
+          }
+
+          # Extrai
+          Write-Host "Extraindo..."
+          Expand-Archive -Path $pgZip -DestinationPath $destDir -Force
+          Remove-Item $pgZip -Force
+
+          # Verifica
+          if (Test-Path "$destDir\pgsql\bin\initdb.exe") {
+            Write-Host "PostgreSQL binaries OK!"
+            $files = (Get-ChildItem "$destDir\pgsql\bin" -Filter "*.exe").Count
+            Write-Host "$files executaveis encontrados"
+          } else {
+            throw "initdb.exe nao encontrado em $destDir\pgsql\bin\"
+          }
+        shell: pwsh
+
       - name: Build NSIS Installer
         run: ./gradlew buildNsisInstaller --parallel --build-cache -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC"
         shell: bash

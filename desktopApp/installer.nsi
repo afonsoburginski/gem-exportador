@@ -1,5 +1,5 @@
 ; GemExportador NSIS Installer
-; Inclui instalação automática do PostgreSQL
+; PostgreSQL embutido no instalador - sem download em runtime
 
 !include "MUI2.nsh"
 
@@ -18,6 +18,9 @@
 !endif
 !ifndef ICON_FILE
   !define ICON_FILE "src\jvmMain\resources\favicon.ico"
+!endif
+!ifndef PGSQL_DIR
+  !define PGSQL_DIR "pgsql-bundle\pgsql"
 !endif
 
 ; --- Configuracao geral ---
@@ -62,7 +65,7 @@ FunctionEnd
 Section "Install"
   SetOutPath "$INSTDIR"
 
-  ; Icone do app (usa o original, nao o gerado pelo jpackage)
+  ; Icone do app
   File "/oname=${APP_NAME}.ico" "${ICON_FILE}"
 
   ; Diretorio app (JARs, DLLs, resources, config)
@@ -73,15 +76,25 @@ Section "Install"
   SetOutPath "$INSTDIR\runtime"
   File /r "${APP_DIR}\runtime\*.*"
 
-  ; Volta para INSTDIR (working dir dos shortcuts)
   SetOutPath "$INSTDIR"
 
-  ; Cria pastas de dados em local com permissoes de escrita
+  ; ============================================
+  ; PostgreSQL embutido - copia binarios
+  ; ============================================
+  DetailPrint "Instalando PostgreSQL..."
   CreateDirectory "C:\gem-exportador"
   CreateDirectory "C:\gem-exportador\logs"
   CreateDirectory "C:\gem-exportador\controle"
 
-  ; Cria arquivo .env com configuracao padrao (inclui PostgreSQL)
+  ; Copia binarios PostgreSQL (somente se nao existem)
+  IfFileExists "C:\gem-exportador\pgsql\bin\initdb.exe" pgsql_exists
+    SetOutPath "C:\gem-exportador\pgsql"
+    File /r "${PGSQL_DIR}\*.*"
+  pgsql_exists:
+
+  SetOutPath "$INSTDIR"
+
+  ; .env
   FileOpen $0 "$INSTDIR\.env" w
   FileWrite $0 'SERVER_HOST=127.0.0.1$\r$\n'
   FileWrite $0 'SERVER_PORT=8080$\r$\n'
@@ -98,10 +111,18 @@ Section "Install"
   FileWrite $0 'DB_PASSWORD=123$\r$\n'
   FileClose $0
 
-  ; Script de setup do PostgreSQL
+  ; Script de setup
   File "/oname=setup-postgres.cmd" "setup-postgres.cmd"
 
-  ; Cria script de lancamento (evita limite de 260 chars em shortcut)
+  ; Configura PostgreSQL (init, servico, banco)
+  DetailPrint "Configurando PostgreSQL..."
+  nsExec::ExecToLog '"$INSTDIR\setup-postgres.cmd"'
+  Pop $0
+  StrCmp $0 "0" pg_ok
+    DetailPrint "Aviso: Setup PostgreSQL retornou codigo $0"
+  pg_ok:
+
+  ; Script de lancamento
   FileOpen $0 "$INSTDIR\launch.cmd" w
   FileWrite $0 '@echo off$\r$\n'
   FileWrite $0 'cd /d "%~dp0"$\r$\n'
@@ -115,27 +136,15 @@ Section "Install"
   FileWrite $0 '  -cp "app\*" MainKt$\r$\n'
   FileClose $0
 
-  ; ============================================
-  ; Instala e configura PostgreSQL automaticamente
-  ; ============================================
-  DetailPrint "Configurando PostgreSQL..."
-  nsExec::ExecToLog '"$INSTDIR\setup-postgres.cmd"'
-  Pop $0
-  StrCmp $0 "0" pg_ok
-    DetailPrint "Aviso: Setup do PostgreSQL retornou codigo $0"
-    DetailPrint "O PostgreSQL pode precisar ser configurado manualmente."
-  pg_ok:
-
   ; Desinstalador
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
-  ; Shortcut no Desktop (aponta para cmd minimizado, com icone correto)
+  ; Shortcuts
   CreateShortCut "$DESKTOP\${APP_NAME}.lnk" \
     "$INSTDIR\launch.cmd" "" \
     "$INSTDIR\${APP_NAME}.ico" 0 \
     SW_SHOWMINIMIZED
 
-  ; Shortcuts no Menu Iniciar
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" \
     "$INSTDIR\launch.cmd" "" \
@@ -144,7 +153,7 @@ Section "Install"
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\Desinstalar ${APP_NAME}.lnk" \
     "$INSTDIR\uninstall.exe"
 
-  ; Registro - Add/Remove Programs
+  ; Registro
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" \
     "DisplayName" "${APP_NAME}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" \
@@ -166,7 +175,7 @@ SectionEnd
 
 ; --- Secao de desinstalacao ---
 Section "Uninstall"
-  ; Para o servico PostgreSQL do GEM
+  ; Para o servico PostgreSQL
   nsExec::ExecToLog 'net stop GemPostgreSQL'
   nsExec::ExecToLog '"C:\gem-exportador\pgsql\bin\pg_ctl.exe" unregister -N GemPostgreSQL'
 
@@ -180,8 +189,8 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   
-  ; Pergunta se deseja remover dados do usuario (incluindo PostgreSQL)
-  MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover TODOS os dados do aplicativo (banco de dados PostgreSQL, logs, etc.)?" IDYES removedata IDNO skipdata
+  ; Pergunta se deseja remover dados
+  MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover TODOS os dados (banco de dados, logs, PostgreSQL)?" IDYES removedata IDNO skipdata
   removedata:
     RMDir /r "C:\gem-exportador"
   skipdata:
@@ -199,7 +208,7 @@ Section "Uninstall"
   DeleteRegKey HKLM "Software\${APP_NAME}"
 SectionEnd
 
-; --- Funcao para lancar o app apos instalacao ---
+; --- Funcao para lancar o app ---
 Function LaunchApp
   SetOutPath "$INSTDIR"
   Exec '"$INSTDIR\launch.cmd"'

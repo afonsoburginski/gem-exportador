@@ -8,264 +8,182 @@ echo ============================================
 echo.
 
 set PG_DIR=C:\gem-exportador\pgsql
-set PG_DATA=C:\gem-exportador\pgsql\data
+set PG_DATA=%PG_DIR%\data
 set PG_PORT=5432
 set PG_USER=postgres
 set PG_PASS=123
 set PG_DB=gem_exportador
 set SERVICE_NAME=GemPostgreSQL
-set PG_URL=https://sbp.enterprisedb.com/getfile.jsp?fileid=1259906
 
 :: ============================================
-:: 1. Verifica se PostgreSQL ja esta acessivel
+:: 1. Verifica se PostgreSQL ja esta rodando
 :: ============================================
-echo [1/6] Verificando se PostgreSQL ja esta instalado...
+echo [1/5] Verificando PostgreSQL...
 
-:: Tenta conectar na porta 5432
-powershell -Command "try { $tcp = New-Object System.Net.Sockets.TcpClient; $tcp.Connect('127.0.0.1', %PG_PORT%); $tcp.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
+powershell -Command "try { $t = New-Object Net.Sockets.TcpClient('127.0.0.1',%PG_PORT%); $t.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo       PostgreSQL ja esta rodando na porta %PG_PORT%!
+    echo       PostgreSQL ja rodando na porta %PG_PORT%.
     goto :create_db
 )
 
-:: Verifica se nosso servico existe
 sc query %SERVICE_NAME% >nul 2>&1
 if %errorlevel% equ 0 (
-    echo       Servico %SERVICE_NAME% encontrado. Iniciando...
+    echo       Servico encontrado. Iniciando...
     net start %SERVICE_NAME% >nul 2>&1
     timeout /t 5 /nobreak >nul
     goto :create_db
 )
 
-:: Verifica se ja tem binarios instalados
-if exist "%PG_DIR%\bin\pg_ctl.exe" (
-    echo       Binarios PostgreSQL encontrados em %PG_DIR%
-    if exist "%PG_DATA%\PG_VERSION" (
-        echo       Dados do banco encontrados. Registrando servico...
-        goto :register_service
-    ) else (
-        echo       Dados nao encontrados. Inicializando...
-        goto :init_db
-    )
-)
-
 :: ============================================
-:: 2. Instalar Chocolatey + Download PostgreSQL
+:: 2. Verifica binarios
 :: ============================================
-echo [2/6] Preparando download do PostgreSQL 16...
+echo [2/5] Verificando binarios PostgreSQL...
 
-:: Instala Chocolatey se nao existir
-where choco >nul 2>&1
-if %errorlevel% neq 0 (
-    echo       Instalando Chocolatey...
-    powershell -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))" 2>&1
-    :: Atualiza PATH para encontrar choco
-    set "PATH=%ALLUSERSPROFILE%\chocolatey\bin;%PATH%"
-)
-
-:: Instala wget via Chocolatey se nao existir
-where wget >nul 2>&1
-if %errorlevel% neq 0 (
-    echo       Instalando wget...
-    choco install wget -y --no-progress 2>&1
-    set "PATH=%ALLUSERSPROFILE%\chocolatey\bin;%PATH%"
-)
-
-:: Download PostgreSQL via wget
-set PG_ZIP=%TEMP%\pgsql-%RANDOM%%RANDOM%.zip
-
-:: Limpa downloads anteriores
-del /f /q "%TEMP%\pgsql-*.zip" >nul 2>&1
-
-echo       Baixando PostgreSQL 16 (pode levar alguns minutos)...
-wget --no-check-certificate -O "%PG_ZIP%" "%PG_URL%" 2>&1
-if %errorlevel% neq 0 (
-    echo       ERRO: Falha ao baixar PostgreSQL!
-    del /f "%PG_ZIP%" >nul 2>&1
-    exit /b 1
-)
-
-:: Verifica se baixou com tamanho valido
-for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
-if "!FILE_SIZE!"=="" (
-    echo       ERRO: Arquivo nao foi baixado!
-    exit /b 1
-)
-if !FILE_SIZE! lss 1000000 (
-    echo       ERRO: Arquivo baixado muito pequeno (!FILE_SIZE! bytes)
-    del /f "%PG_ZIP%" >nul 2>&1
-    exit /b 1
-)
-
-echo       Download concluido (!FILE_SIZE! bytes)
-
-:: ============================================
-:: 3. Extrair PostgreSQL
-:: ============================================
-echo [3/6] Extraindo PostgreSQL...
-
-:: Cria diretorio base
-if not exist "C:\gem-exportador" mkdir "C:\gem-exportador"
-
-:: Remove instalacao anterior se existir
-if exist "%PG_DIR%" rmdir /s /q "%PG_DIR%"
-
-:: Extrai o ZIP (estrutura: pgsql\bin, pgsql\share, etc.)
-powershell -Command "Expand-Archive -Path '%PG_ZIP%' -DestinationPath 'C:\gem-exportador' -Force"
-if %errorlevel% neq 0 (
-    echo       ERRO: Falha ao extrair PostgreSQL!
-    del /f "%PG_ZIP%" >nul 2>&1
-    exit /b 1
-)
-
-:: Limpa o ZIP
-del /f "%PG_ZIP%" >nul 2>&1
-
-:: Verifica se extraiu corretamente
 if not exist "%PG_DIR%\bin\initdb.exe" (
-    echo       ERRO: Binarios nao encontrados apos extracao!
-    echo       Verificando estrutura...
-    dir "C:\gem-exportador" /b
+    echo       ERRO: Binarios PostgreSQL nao encontrados em %PG_DIR%\bin
+    echo       Reinstale o GemExportador.
     exit /b 1
 )
-
-echo       PostgreSQL extraido com sucesso!
+echo       Binarios OK em %PG_DIR%
 
 :: ============================================
-:: 4. Inicializar banco de dados
+:: 3. Inicializar banco
 :: ============================================
-:init_db
-echo [4/6] Inicializando banco de dados...
-
-:: Cria arquivo de senha (sem newline final)
-> "%TEMP%\pgpass.txt" (
-    <nul set /p=%PG_PASS%
+if exist "%PG_DATA%\PG_VERSION" (
+    echo [3/5] Banco ja inicializado.
+    goto :register_service
 )
 
-"%PG_DIR%\bin\initdb.exe" -U %PG_USER% -A md5 --pwfile="%TEMP%\pgpass.txt" -E UTF-8 -D "%PG_DATA%" -L "%PG_DIR%\share"
-set INIT_RESULT=%errorlevel%
+echo [3/5] Inicializando banco de dados...
 
-del /f "%TEMP%\pgpass.txt" >nul 2>&1
+:: Usa trust para local - sem problema de senha durante setup
+"%PG_DIR%\bin\initdb.exe" -U %PG_USER% -A trust -E UTF-8 -D "%PG_DATA%" -L "%PG_DIR%\share"
 
-if %INIT_RESULT% neq 0 (
+if %errorlevel% neq 0 (
     echo       ERRO: Falha ao inicializar banco!
     exit /b 1
 )
 
-:: Configura postgresql.conf para aceitar conexoes de rede
->> "%PG_DATA%\postgresql.conf" (
-    echo.
-    echo # GEM Exportador config
-    echo listen_addresses = '*'
-    echo port = %PG_PORT%
-    echo logging_collector = on
-    echo log_directory = 'log'
-)
+:: Configura postgresql.conf
+echo. >> "%PG_DATA%\postgresql.conf"
+echo # GEM Exportador >> "%PG_DATA%\postgresql.conf"
+echo listen_addresses = '*' >> "%PG_DATA%\postgresql.conf"
+echo port = %PG_PORT% >> "%PG_DATA%\postgresql.conf"
+echo logging_collector = on >> "%PG_DATA%\postgresql.conf"
+echo log_directory = 'log' >> "%PG_DATA%\postgresql.conf"
 
-:: Configura pg_hba.conf para aceitar conexoes da rede local com senha
->> "%PG_DATA%\pg_hba.conf" (
-    echo.
-    echo # Acesso remoto da rede local (GEM Exportador)
-    echo host    all    all    0.0.0.0/0    md5
-)
+:: Configura pg_hba.conf - trust local, md5 remoto
+echo. >> "%PG_DATA%\pg_hba.conf"
+echo # Acesso remoto com senha >> "%PG_DATA%\pg_hba.conf"
+echo host    all    all    0.0.0.0/0    md5 >> "%PG_DATA%\pg_hba.conf"
 
-echo       Banco inicializado com sucesso!
+echo       Banco inicializado!
 
 :: ============================================
-:: 5. Registrar e iniciar servico Windows
+:: 4. Registrar e iniciar servico
 :: ============================================
 :register_service
-echo [5/6] Registrando servico Windows '%SERVICE_NAME%'...
+echo [4/5] Registrando servico Windows...
 
-:: Registra como servico do Windows (inicia automaticamente)
-"%PG_DIR%\bin\pg_ctl.exe" register -N "%SERVICE_NAME%" -D "%PG_DATA%" -S auto
+"%PG_DIR%\bin\pg_ctl.exe" register -N "%SERVICE_NAME%" -D "%PG_DATA%" -S auto >nul 2>&1
 if %errorlevel% neq 0 (
-    echo       Aviso: Nao foi possivel registrar como servico.
-    echo       Tentando iniciar manualmente...
-    "%PG_DIR%\bin\pg_ctl.exe" start -D "%PG_DATA%" -w -t 30
-) else (
-    echo       Servico registrado! Iniciando...
-    net start %SERVICE_NAME%
+    echo       Aviso: Servico ja pode estar registrado.
 )
 
-:: Aguarda PostgreSQL ficar pronto
-echo       Aguardando PostgreSQL iniciar...
+net start %SERVICE_NAME% >nul 2>&1
+if %errorlevel% neq 0 (
+    echo       Aviso: Tentando iniciar diretamente...
+    start /b "" "%PG_DIR%\bin\pg_ctl.exe" start -D "%PG_DATA%" -l "%PG_DATA%\log\startup.log" -w
+    timeout /t 5 /nobreak >nul
+)
+
+:: Aguarda ficar pronto (max 30 segundos)
 set /a RETRIES=0
 :wait_pg
 set /a RETRIES+=1
 if %RETRIES% gtr 15 (
-    echo       ERRO: PostgreSQL nao iniciou a tempo!
+    echo       ERRO: PostgreSQL nao iniciou em 30 segundos!
+    echo       Verificando log...
+    if exist "%PG_DATA%\log" (
+        for /f "delims=" %%f in ('dir /b /o-d "%PG_DATA%\log\*.log" 2^>nul') do (
+            type "%PG_DATA%\log\%%f" 2>nul
+            goto :pg_failed
+        )
+    )
+    :pg_failed
     exit /b 1
 )
 timeout /t 2 /nobreak >nul
-powershell -Command "try { $tcp = New-Object System.Net.Sockets.TcpClient; $tcp.Connect('127.0.0.1', %PG_PORT%); $tcp.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
+powershell -Command "try { $t = New-Object Net.Sockets.TcpClient('127.0.0.1',%PG_PORT%); $t.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
 if %errorlevel% neq 0 goto :wait_pg
 
-echo       PostgreSQL rodando!
+echo       PostgreSQL rodando na porta %PG_PORT%!
 
-:: Libera porta 5432 no Firewall do Windows (para acesso remoto)
+:: Firewall
+netsh advfirewall firewall delete rule name="PostgreSQL GEM" >nul 2>&1
 netsh advfirewall firewall add rule name="PostgreSQL GEM" dir=in action=allow protocol=TCP localport=%PG_PORT% >nul 2>&1
-echo       Firewall: porta %PG_PORT% liberada
 
 :: ============================================
-:: 6. Criar banco de dados
+:: 5. Criar banco e definir senha
 :: ============================================
 :create_db
-echo [6/6] Configurando banco de dados '%PG_DB%'...
+echo [5/5] Criando banco '%PG_DB%'...
 
-:: Define senha para conexao
+:: Define PGPASSWORD para conexoes que precisam
 set PGPASSWORD=%PG_PASS%
 
-:: Determina qual psql usar
+:: Localiza psql
 set PSQL=%PG_DIR%\bin\psql.exe
 if not exist "%PSQL%" (
     where psql >nul 2>&1
     if %errorlevel% equ 0 (
         set PSQL=psql
     ) else (
-        echo       Aviso: psql nao encontrado. Banco sera criado pelo app.
+        echo       psql nao encontrado - app criara o banco.
         goto :setup_odbc
     )
 )
 
-:: Verifica se o banco ja existe
-"%PSQL%" -U %PG_USER% -h localhost -p %PG_PORT% -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='%PG_DB%'" 2>nul | findstr "1" >nul 2>&1
+:: Tenta conectar (trust local nao precisa senha)
+"%PSQL%" -U %PG_USER% -h 127.0.0.1 -p %PG_PORT% -d postgres -c "SELECT 1" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo       Nao foi possivel conectar ao PostgreSQL.
+    echo       App tentara criar o banco na primeira execucao.
+    goto :setup_odbc
+)
+
+:: Define senha do usuario postgres
+echo       Definindo senha do usuario postgres...
+"%PSQL%" -U %PG_USER% -h 127.0.0.1 -p %PG_PORT% -d postgres -c "ALTER USER %PG_USER% PASSWORD '%PG_PASS%'" >nul 2>&1
+
+:: Verifica se banco existe
+"%PSQL%" -U %PG_USER% -h 127.0.0.1 -p %PG_PORT% -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='%PG_DB%'" 2>nul | findstr "1" >nul 2>&1
 if %errorlevel% equ 0 (
     echo       Banco '%PG_DB%' ja existe.
 ) else (
-    :: Cria o banco
-    "%PG_DIR%\bin\createdb.exe" -U %PG_USER% -h localhost -p %PG_PORT% %PG_DB% 2>nul
+    echo       Criando banco '%PG_DB%'...
+    "%PSQL%" -U %PG_USER% -h 127.0.0.1 -p %PG_PORT% -d postgres -c "CREATE DATABASE %PG_DB%" 2>nul
     if !errorlevel! equ 0 (
         echo       Banco '%PG_DB%' criado com sucesso!
     ) else (
-        echo       Aviso: Nao foi possivel criar banco. O app criara automaticamente.
+        echo       Aviso: Falha ao criar banco. App criara automaticamente.
     )
 )
 
 :: ============================================
-:: 7. Configurar ODBC DSN (opcional)
+:: ODBC DSN
 :: ============================================
 :setup_odbc
 echo.
-echo [Extra] Configurando ODBC DSN...
-
-:: Tenta criar DSN de sistema (32-bit) para o banco
-powershell -Command "try { Add-OdbcDsn -Name '%PG_DB%' -DriverName 'PostgreSQL ANSI' -DsnType System -Platform '32-bit' -SetPropertyValue @('Server=localhost', 'Port=%PG_PORT%', 'Database=%PG_DB%', 'Username=%PG_USER%', 'Password=%PG_PASS%', 'SSLMode=disable') -ErrorAction Stop; Write-Host '       DSN ODBC 32-bit criado!'; exit 0 } catch { Write-Host '       Aviso: Driver ODBC nao encontrado (instale psqlODBC separadamente)'; exit 0 }" 2>nul
-
-:: Tenta tambem 64-bit
-powershell -Command "try { Add-OdbcDsn -Name '%PG_DB%' -DriverName 'PostgreSQL ANSI(x64)' -DsnType System -Platform '64-bit' -SetPropertyValue @('Server=localhost', 'Port=%PG_PORT%', 'Database=%PG_DB%', 'Username=%PG_USER%', 'Password=%PG_PASS%', 'SSLMode=disable') -ErrorAction Stop; Write-Host '       DSN ODBC 64-bit criado!'; exit 0 } catch { exit 0 }" 2>nul
+echo Configurando ODBC...
+powershell -Command "try { Add-OdbcDsn -Name '%PG_DB%' -DriverName 'PostgreSQL ANSI' -DsnType System -Platform '32-bit' -SetPropertyValue @('Server=localhost','Port=%PG_PORT%','Database=%PG_DB%','Username=%PG_USER%','Password=%PG_PASS%','SSLMode=disable') -ErrorAction Stop; Write-Host '      DSN 32-bit criado' } catch { Write-Host '      DSN 32-bit: driver ODBC nao encontrado (instale psqlodbc)' }" 2>nul
+powershell -Command "try { Add-OdbcDsn -Name '%PG_DB%' -DriverName 'PostgreSQL ANSI(x64)' -DsnType System -Platform '64-bit' -SetPropertyValue @('Server=localhost','Port=%PG_PORT%','Database=%PG_DB%','Username=%PG_USER%','Password=%PG_PASS%','SSLMode=disable') -ErrorAction Stop; Write-Host '      DSN 64-bit criado' } catch { Write-Host '      DSN 64-bit: driver ODBC nao encontrado (instale psqlodbc)' }" 2>nul
 
 echo.
 echo ============================================
-echo   PostgreSQL configurado com sucesso!
-echo.
-echo   Host:     localhost
-echo   Porta:    %PG_PORT%
-echo   Banco:    %PG_DB%
-echo   Usuario:  %PG_USER%
-echo   Senha:    %PG_PASS%
-echo   Servico:  %SERVICE_NAME%
+echo   PostgreSQL pronto!
+echo   Porta: %PG_PORT%  Banco: %PG_DB%
+echo   Usuario: %PG_USER%  Senha: %PG_PASS%
 echo ============================================
-echo.
 
 exit /b 0

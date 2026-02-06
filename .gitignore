@@ -29,6 +29,9 @@ shared/shared.podspec
 *.deb
 *.rpm
 
+# PostgreSQL bundle (baixado pelo CI/CD)
+desktopApp/pgsql-bundle/
+
 # Node modules (qualquer pasta)
 **/node_modules/
 

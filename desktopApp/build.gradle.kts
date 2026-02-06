@@ -76,9 +76,13 @@ tasks.register<Exec>("buildNsisInstaller") {
     val appDir = file("build/compose/binaries/main/app/$appName")
     val outputDir = file("build/compose/binaries/main/nsis")
     val iconFile = file("src/jvmMain/resources/favicon.ico")
+    val pgsqlDir = file("pgsql-bundle/pgsql")
 
     doFirst {
         outputDir.mkdirs()
+        if (!pgsqlDir.exists()) {
+            throw GradleException("PostgreSQL binaries not found at ${pgsqlDir.absolutePath}. Run the download step first.")
+        }
     }
 
     // Procura makensis.exe no PATH ou em locais comuns
@@ -95,6 +99,7 @@ tasks.register<Exec>("buildNsisInstaller") {
         "/DAPP_DIR=${appDir.absolutePath}",
         "/DOUTPUT_DIR=${outputDir.absolutePath}",
         "/DICON_FILE=${iconFile.absolutePath}",
+        "/DPGSQL_DIR=${pgsqlDir.absolutePath}",
         nsisScript.absolutePath
     )
 }
