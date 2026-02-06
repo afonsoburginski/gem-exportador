@@ -1,5 +1,5 @@
 ; GemExportador NSIS Installer
-; Substitui jpackage MSI que gerava launcher com manifest corrompido
+; Inclui instalação automática do PostgreSQL
 
 !include "MUI2.nsh"
 
@@ -78,20 +78,28 @@ Section "Install"
 
   ; Cria pastas de dados em local com permissoes de escrita
   CreateDirectory "C:\gem-exportador"
-  CreateDirectory "C:\gem-exportador\database"
   CreateDirectory "C:\gem-exportador\logs"
   CreateDirectory "C:\gem-exportador\controle"
 
-  ; Cria arquivo .env com configuracao padrao
+  ; Cria arquivo .env com configuracao padrao (inclui PostgreSQL)
   FileOpen $0 "$INSTDIR\.env" w
   FileWrite $0 'SERVER_HOST=127.0.0.1$\r$\n'
   FileWrite $0 'SERVER_PORT=8080$\r$\n'
   FileWrite $0 'SERVER_URL=http://localhost:8080$\r$\n'
   FileWrite $0 'INVENTOR_PASTA_CONTROLE=C:\gem-exportador\controle$\r$\n'
-  FileWrite $0 'DATABASE_DIR=C:\gem-exportador\database$\r$\n'
   FileWrite $0 'LOG_LEVEL=INFO$\r$\n'
   FileWrite $0 'LOG_DIR=C:\gem-exportador\logs$\r$\n'
+  FileWrite $0 '$\r$\n'
+  FileWrite $0 '# PostgreSQL$\r$\n'
+  FileWrite $0 'DB_HOST=localhost$\r$\n'
+  FileWrite $0 'DB_PORT=5432$\r$\n'
+  FileWrite $0 'DB_NAME=gem_exportador$\r$\n'
+  FileWrite $0 'DB_USER=postgres$\r$\n'
+  FileWrite $0 'DB_PASSWORD=123$\r$\n'
   FileClose $0
+
+  ; Script de setup do PostgreSQL
+  File "/oname=setup-postgres.cmd" "setup-postgres.cmd"
 
   ; Cria script de lancamento (evita limite de 260 chars em shortcut)
   FileOpen $0 "$INSTDIR\launch.cmd" w
@@ -106,6 +114,17 @@ Section "Install"
   FileWrite $0 '  -Djpackage.app-version=${APP_VERSION} ^$\r$\n'
   FileWrite $0 '  -cp "app\*" MainKt$\r$\n'
   FileClose $0
+
+  ; ============================================
+  ; Instala e configura PostgreSQL automaticamente
+  ; ============================================
+  DetailPrint "Configurando PostgreSQL..."
+  nsExec::ExecToLog '"$INSTDIR\setup-postgres.cmd"'
+  Pop $0
+  StrCmp $0 "0" pg_ok
+    DetailPrint "Aviso: Setup do PostgreSQL retornou codigo $0"
+    DetailPrint "O PostgreSQL pode precisar ser configurado manualmente."
+  pg_ok:
 
   ; Desinstalador
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -147,22 +166,29 @@ SectionEnd
 
 ; --- Secao de desinstalacao ---
 Section "Uninstall"
-  ; Remove arquivos
+  ; Para o servico PostgreSQL do GEM
+  nsExec::ExecToLog 'net stop GemPostgreSQL'
+  nsExec::ExecToLog '"C:\gem-exportador\pgsql\bin\pg_ctl.exe" unregister -N GemPostgreSQL'
+
+  ; Remove arquivos do app
   RMDir /r "$INSTDIR\app"
   RMDir /r "$INSTDIR\runtime"
-  RMDir /r "$INSTDIR\database"
-  RMDir /r "$INSTDIR\logs"
   Delete "$INSTDIR\${APP_NAME}.ico"
   Delete "$INSTDIR\launch.cmd"
+  Delete "$INSTDIR\setup-postgres.cmd"
   Delete "$INSTDIR\.env"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   
-  ; Pergunta se deseja remover dados do usuario
-  MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover os dados do aplicativo (banco de dados e logs)?" IDYES removedata IDNO skipdata
+  ; Pergunta se deseja remover dados do usuario (incluindo PostgreSQL)
+  MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover TODOS os dados do aplicativo (banco de dados PostgreSQL, logs, etc.)?" IDYES removedata IDNO skipdata
   removedata:
     RMDir /r "C:\gem-exportador"
   skipdata:
+
+  ; Remove ODBC DSN
+  nsExec::ExecToLog 'powershell -Command "Remove-OdbcDsn -Name gem_exportador -DsnType System -Platform 32-bit -ErrorAction SilentlyContinue"'
+  nsExec::ExecToLog 'powershell -Command "Remove-OdbcDsn -Name gem_exportador -DsnType System -Platform 64-bit -ErrorAction SilentlyContinue"'
 
   ; Remove shortcuts
   Delete "$DESKTOP\${APP_NAME}.lnk"

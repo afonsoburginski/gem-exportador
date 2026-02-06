@@ -24,7 +24,7 @@ object Config {
     val dbPort: Int get() = get("DB_PORT", "5432").toIntOrNull() ?: 5432
     val dbName: String get() = get("DB_NAME", "gem_exportador")
     val dbUser: String get() = get("DB_USER", "postgres")
-    val dbPassword: String get() = get("DB_PASSWORD", "postgres")
+    val dbPassword: String get() = get("DB_PASSWORD", "123")
     
     /** URL JDBC para conexão com PostgreSQL */
     val jdbcUrl: String get() = "jdbc:postgresql://$dbHost:$dbPort/$dbName"

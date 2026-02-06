@@ -41,8 +41,8 @@ fun main() {
         }
     }
     
-    // Aguarda um pouco para o servidor iniciar
-    Thread.sleep(1500)
+    // Aguarda o servidor iniciar (PostgreSQL já está rodando como serviço)
+    Thread.sleep(2000)
     
     // Inicia o app Compose
     application {
@@ -57,12 +57,10 @@ fun main() {
             state = windowState,
             onCloseRequest = ::exitApplication
         ) {
-            // Define tamanho mínimo da janela
             window.minimumSize = java.awt.Dimension(380, 300)
             
-            // Aplica dark title bar após a janela ser exibida
             LaunchedEffect(Unit) {
-                delay(100) // Pequeno delay para garantir que a janela existe
+                delay(100)
                 applyDarkTitleBarByTitle("Gem exportador")
             }
             MainView()
