@@ -6,24 +6,24 @@
 
 -- Tabela principal de desenhos
 CREATE TABLE IF NOT EXISTS desenho (
-    id TEXT NOT NULL PRIMARY KEY,
+    id TEXT NOT NULL PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     nome_arquivo TEXT NOT NULL,
-    computador TEXT NOT NULL,
-    caminho_destino TEXT NOT NULL,
+    computador TEXT NOT NULL DEFAULT '',
+    caminho_destino TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pendente',
     posicao_fila INTEGER,
-    horario_envio TEXT NOT NULL,
-    horario_atualizacao TEXT NOT NULL,
+    horario_envio TIMESTAMPTZ NOT NULL DEFAULT now(),
+    horario_atualizacao TIMESTAMPTZ NOT NULL DEFAULT now(),
     formatos_solicitados TEXT,
     arquivo_original TEXT,
     arquivos_processados TEXT,
     erro TEXT,
-    progresso INTEGER NOT NULL DEFAULT 0,
+    progresso INTEGER DEFAULT 0,
     tentativas INTEGER NOT NULL DEFAULT 0,
-    arquivos_enviados_para_usuario INTEGER NOT NULL DEFAULT 0,
-    cancelado_em TEXT,
-    criado_em TEXT NOT NULL,
-    atualizado_em TEXT NOT NULL,
+    arquivos_enviados_para_usuario INTEGER DEFAULT 0,
+    cancelado_em TIMESTAMPTZ,
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+    atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
     pasta_processamento TEXT
 );
 

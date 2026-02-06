@@ -70,27 +70,29 @@ class DesenhoRepository(
      * Insere ou atualiza um desenho
      */
     fun upsert(desenho: DesenhoAutodesk) {
-        queries.insert(
-            id = desenho.id,
-            nome_arquivo = desenho.nomeArquivo,
-            computador = desenho.computador,
-            caminho_destino = desenho.caminhoDestino,
-            status = desenho.status,
-            posicao_fila = desenho.posicaoFila,
-            horario_envio = desenho.horarioEnvio,
-            horario_atualizacao = desenho.horarioAtualizacao,
-            formatos_solicitados = desenho.formatosSolicitadosJson,
-            arquivo_original = desenho.arquivoOriginal,
-            arquivos_processados = desenho.arquivosProcessadosJson,
-            erro = desenho.erro,
-            progresso = desenho.progresso,
-            tentativas = desenho.tentativas,
-            arquivos_enviados_para_usuario = desenho.arquivosEnviadosParaUsuario,
-            cancelado_em = desenho.canceladoEm,
-            criado_em = desenho.criadoEm ?: desenho.horarioEnvio,
-            atualizado_em = desenho.atualizadoEm ?: desenho.horarioAtualizacao,
-            pasta_processamento = desenho.pastaProcessamento
-        )
+        database.transaction {
+            queries.insert(
+                id = desenho.id,
+                nome_arquivo = desenho.nomeArquivo,
+                computador = desenho.computador,
+                caminho_destino = desenho.caminhoDestino,
+                status = desenho.status,
+                posicao_fila = desenho.posicaoFila,
+                horario_envio = desenho.horarioEnvio,
+                horario_atualizacao = desenho.horarioAtualizacao,
+                formatos_solicitados = desenho.formatosSolicitadosJson,
+                arquivo_original = desenho.arquivoOriginal,
+                arquivos_processados = desenho.arquivosProcessadosJson,
+                erro = desenho.erro,
+                progresso = desenho.progresso,
+                tentativas = desenho.tentativas,
+                arquivos_enviados_para_usuario = desenho.arquivosEnviadosParaUsuario,
+                cancelado_em = desenho.canceladoEm,
+                criado_em = desenho.criadoEm ?: desenho.horarioEnvio,
+                atualizado_em = desenho.atualizadoEm ?: desenho.horarioAtualizacao,
+                pasta_processamento = desenho.pastaProcessamento
+            )
+        }
     }
     
     /**

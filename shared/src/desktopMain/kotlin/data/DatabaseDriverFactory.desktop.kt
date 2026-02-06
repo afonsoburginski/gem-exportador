@@ -33,14 +33,27 @@ actual class DatabaseDriverFactory {
         }
         
         val conn = connection!!
+        val listeners = mutableMapOf<String, MutableSet<app.cash.sqldelight.Query.Listener>>()
         val driver = object : JdbcDriver() {
             override fun getConnection() = conn
             override fun closeConnection(connection: Connection) {
                 // Não fecha a conexão aqui, mantém aberta para reutilização
             }
-            override fun addListener(vararg queryKeys: String, listener: app.cash.sqldelight.Query.Listener) {}
-            override fun removeListener(vararg queryKeys: String, listener: app.cash.sqldelight.Query.Listener) {}
-            override fun notifyListeners(vararg queryKeys: String) {}
+            override fun addListener(vararg queryKeys: String, listener: app.cash.sqldelight.Query.Listener) {
+                queryKeys.forEach { key ->
+                    listeners.getOrPut(key) { mutableSetOf() }.add(listener)
+                }
+            }
+            override fun removeListener(vararg queryKeys: String, listener: app.cash.sqldelight.Query.Listener) {
+                queryKeys.forEach { key ->
+                    listeners[key]?.remove(listener)
+                }
+            }
+            override fun notifyListeners(vararg queryKeys: String) {
+                queryKeys.forEach { key ->
+                    listeners[key]?.forEach { it.queryResultsChanged() }
+                }
+            }
         }
         
         // Verifica se a tabela existe, se não, cria o schema

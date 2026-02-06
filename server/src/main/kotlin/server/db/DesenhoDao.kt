@@ -63,7 +63,7 @@ class DesenhoDao(private val database: Database) {
                 INSERT INTO desenho (id, nome_arquivo, computador, caminho_destino, status, posicao_fila,
                     horario_envio, horario_atualizacao, formatos_solicitados, arquivo_original, arquivos_processados,
                     erro, progresso, tentativas, arquivos_enviados_para_usuario, cancelado_em, criado_em, atualizado_em, pasta_processamento)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?::TIMESTAMPTZ, ?::TIMESTAMPTZ, ?, ?, ?, ?, ?, ?, ?, ?::TIMESTAMPTZ, ?::TIMESTAMPTZ, ?::TIMESTAMPTZ, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     nome_arquivo = EXCLUDED.nome_arquivo,
                     computador = EXCLUDED.computador,
@@ -98,12 +98,12 @@ class DesenhoDao(private val database: Database) {
         database.connection().use { conn ->
             conn.prepareStatement("""
                 UPDATE desenho SET
-                    horario_atualizacao = ?, atualizado_em = ?
+                    horario_atualizacao = ?::TIMESTAMPTZ, atualizado_em = ?::TIMESTAMPTZ
                     ${if (status != null) ", status = ?" else ""}
                     ${if (progresso != null) ", progresso = ?" else ""}
                     ${if (arquivosProcessados != null) ", arquivos_processados = ?" else ""}
                     ${if (erro != null) ", erro = ?" else ""}
-                    ${if (canceladoEm != null) ", cancelado_em = ?" else ""}
+                    ${if (canceladoEm != null) ", cancelado_em = ?::TIMESTAMPTZ" else ""}
                     ${if (posicaoFila != null) ", posicao_fila = ?" else ""}
                 WHERE id = ?
             """.trimIndent()).use { stmt ->

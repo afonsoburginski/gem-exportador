@@ -41,7 +41,7 @@ INSERT INTO desenho(
     horario_envio, horario_atualizacao, formatos_solicitados, arquivo_original,
     arquivos_processados, erro, progresso, tentativas, arquivos_enviados_para_usuario,
     cancelado_em, criado_em, atualizado_em, pasta_processamento
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), ?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), ?)
 ON CONFLICT (id) DO UPDATE SET
     nome_arquivo = EXCLUDED.nome_arquivo,
     computador = EXCLUDED.computador,
@@ -63,10 +63,10 @@ ON CONFLICT (id) DO UPDATE SET
     pasta_processamento = EXCLUDED.pasta_processamento;
 
 updateStatus:
-UPDATE desenho SET status = ?, horario_atualizacao = ?, atualizado_em = ? WHERE id = ?;
+UPDATE desenho SET status = ?, horario_atualizacao = CAST(? AS TIMESTAMPTZ), atualizado_em = CAST(? AS TIMESTAMPTZ) WHERE id = ?;
 
 updateProgresso:
-UPDATE desenho SET progresso = ?, horario_atualizacao = ?, atualizado_em = ? WHERE id = ?;
+UPDATE desenho SET progresso = ?, horario_atualizacao = CAST(? AS TIMESTAMPTZ), atualizado_em = CAST(? AS TIMESTAMPTZ) WHERE id = ?;
 
 delete:
 DELETE FROM desenho WHERE id = ?;
