@@ -19,10 +19,6 @@
 !ifndef ICON_FILE
   !define ICON_FILE "src\jvmMain\resources\favicon.ico"
 !endif
-!ifndef PGSQL_DIR
-  !define PGSQL_DIR "pgsql-bundle\pgsql"
-!endif
-
 ; --- Configuracao geral ---
 Name "${APP_NAME} ${APP_VERSION}"
 OutFile "${OUTPUT_DIR}\${APP_NAME}-${APP_VERSION}-setup.exe"
@@ -83,20 +79,12 @@ Section "Install"
   SetOutPath "$INSTDIR"
 
   ; ============================================
-  ; PostgreSQL embutido - copia binarios
+  ; Prepara diretorios para PostgreSQL
   ; ============================================
-  DetailPrint "Instalando PostgreSQL..."
+  DetailPrint "Preparando diretorios..."
   CreateDirectory "C:\gem-exportador"
   CreateDirectory "C:\gem-exportador\logs"
   CreateDirectory "C:\gem-exportador\controle"
-
-  ; Copia binarios PostgreSQL (somente se nao existem)
-  IfFileExists "C:\gem-exportador\pgsql\bin\initdb.exe" pgsql_exists
-    SetOutPath "C:\gem-exportador\pgsql"
-    File /r "${PGSQL_DIR}\*.*"
-  pgsql_exists:
-
-  SetOutPath "$INSTDIR"
 
   ; .env
   FileOpen $0 "$INSTDIR\.env" w
@@ -118,8 +106,8 @@ Section "Install"
   ; Script de setup
   File "/oname=setup-postgres.cmd" "setup-postgres.cmd"
 
-  ; Configura PostgreSQL (init, servico, banco)
-  DetailPrint "Configurando PostgreSQL..."
+  ; Baixa, configura e inicia PostgreSQL
+  DetailPrint "Configurando PostgreSQL (pode baixar na primeira vez)..."
   nsExec::ExecToLog '"$INSTDIR\setup-postgres.cmd"'
   Pop $0
   StrCmp $0 "0" pg_ok

@@ -14,11 +14,13 @@ set PG_USER=postgres
 set PG_PASS=123
 set PG_DB=gem_exportador
 set SERVICE_NAME=GemPostgreSQL
+set PG_URL=https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip
+set PG_ZIP=C:\gem-exportador\pgsql-download.zip
 
 :: ============================================
 :: 1. Verifica se PostgreSQL ja esta rodando
 :: ============================================
-echo [1/5] Verificando PostgreSQL...
+echo [1/6] Verificando PostgreSQL...
 
 powershell -Command "try { $t = New-Object Net.Sockets.TcpClient('127.0.0.1',%PG_PORT%); $t.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
 if %errorlevel% equ 0 (
@@ -35,26 +37,80 @@ if %errorlevel% equ 0 (
 )
 
 :: ============================================
-:: 2. Verifica binarios
+:: 2. Download do PostgreSQL (se necessario)
 :: ============================================
-echo [2/5] Verificando binarios PostgreSQL...
+echo [2/6] Verificando binarios PostgreSQL...
 
-if not exist "%PG_DIR%\bin\initdb.exe" (
-    echo       ERRO: Binarios PostgreSQL nao encontrados em %PG_DIR%\bin
-    echo       Reinstale o GemExportador.
+if exist "%PG_DIR%\bin\initdb.exe" (
+    echo       Binarios OK em %PG_DIR%
+    goto :init_db
+)
+
+echo       Binarios nao encontrados. Baixando PostgreSQL...
+echo       URL: %PG_URL%
+echo.
+
+:: Cria diretorio
+if not exist "C:\gem-exportador" mkdir "C:\gem-exportador"
+
+:: Tenta com PowerShell WebClient (mais confiavel)
+echo       Tentativa 1: PowerShell WebClient...
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { (New-Object Net.WebClient).DownloadFile('%PG_URL%', '%PG_ZIP%'); exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }" 2>nul
+if %errorlevel% equ 0 goto :check_download
+
+:: Tenta com curl
+echo       Tentativa 2: curl...
+curl.exe -L -o "%PG_ZIP%" "%PG_URL%" --retry 3 --connect-timeout 30 2>nul
+if %errorlevel% equ 0 goto :check_download
+
+:: Tenta com BITS
+echo       Tentativa 3: BITS Transfer...
+powershell -Command "Start-BitsTransfer -Source '%PG_URL%' -Destination '%PG_ZIP%' -ErrorAction Stop" 2>nul
+if %errorlevel% equ 0 goto :check_download
+
+echo       ERRO: Nao foi possivel baixar PostgreSQL!
+echo       Baixe manualmente de: %PG_URL%
+echo       Extraia para: %PG_DIR%
+exit /b 1
+
+:check_download
+:: Verifica tamanho minimo (> 50MB)
+for %%A in ("%PG_ZIP%") do set PG_SIZE=%%~zA
+if !PG_SIZE! lss 50000000 (
+    echo       ERRO: Arquivo muito pequeno (!PG_SIZE! bytes). Download incompleto.
+    del /f /q "%PG_ZIP%" 2>nul
     exit /b 1
 )
-echo       Binarios OK em %PG_DIR%
+echo       Download OK: !PG_SIZE! bytes
+
+:: Extrai
+echo       Extraindo...
+powershell -Command "Expand-Archive -Path '%PG_ZIP%' -DestinationPath 'C:\gem-exportador' -Force" 2>nul
+if %errorlevel% neq 0 (
+    echo       ERRO: Falha ao extrair!
+    exit /b 1
+)
+
+:: Limpa zip
+del /f /q "%PG_ZIP%" 2>nul
+
+:: Verifica extracao
+if not exist "%PG_DIR%\bin\initdb.exe" (
+    echo       ERRO: initdb.exe nao encontrado apos extracao!
+    exit /b 1
+)
+echo       PostgreSQL extraido com sucesso!
 
 :: ============================================
 :: 3. Inicializar banco
 :: ============================================
+:init_db
 if exist "%PG_DATA%\PG_VERSION" (
-    echo [3/5] Banco ja inicializado.
+    echo [3/6] Banco ja inicializado.
     goto :register_service
 )
 
-echo [3/5] Inicializando banco de dados...
+echo [3/6] Inicializando banco de dados...
 
 :: Usa trust para local - sem problema de senha durante setup
 "%PG_DIR%\bin\initdb.exe" -U %PG_USER% -A trust -E UTF-8 -D "%PG_DATA%" -L "%PG_DIR%\share"
@@ -83,7 +139,7 @@ echo       Banco inicializado!
 :: 4. Registrar e iniciar servico
 :: ============================================
 :register_service
-echo [4/5] Registrando servico Windows...
+echo [4/6] Registrando servico Windows...
 
 "%PG_DIR%\bin\pg_ctl.exe" register -N "%SERVICE_NAME%" -D "%PG_DATA%" -S auto >nul 2>&1
 if %errorlevel% neq 0 (
@@ -127,7 +183,7 @@ netsh advfirewall firewall add rule name="PostgreSQL GEM" dir=in action=allow pr
 :: 5. Criar banco e definir senha
 :: ============================================
 :create_db
-echo [5/5] Criando banco '%PG_DB%'...
+echo [5/6] Criando banco '%PG_DB%'...
 
 :: Define PGPASSWORD para conexoes que precisam
 set PGPASSWORD=%PG_PASS%
@@ -171,11 +227,10 @@ if %errorlevel% equ 0 (
 )
 
 :: ============================================
-:: ODBC DSN
+:: 6. ODBC DSN
 :: ============================================
 :setup_odbc
-echo.
-echo Configurando ODBC...
+echo [6/6] Configurando ODBC...
 powershell -Command "try { Add-OdbcDsn -Name '%PG_DB%' -DriverName 'PostgreSQL ANSI' -DsnType System -Platform '32-bit' -SetPropertyValue @('Server=localhost','Port=%PG_PORT%','Database=%PG_DB%','Username=%PG_USER%','Password=%PG_PASS%','SSLMode=disable') -ErrorAction Stop; Write-Host '      DSN 32-bit criado' } catch { Write-Host '      DSN 32-bit: driver ODBC nao encontrado (instale psqlodbc)' }" 2>nul
 powershell -Command "try { Add-OdbcDsn -Name '%PG_DB%' -DriverName 'PostgreSQL ANSI(x64)' -DsnType System -Platform '64-bit' -SetPropertyValue @('Server=localhost','Port=%PG_PORT%','Database=%PG_DB%','Username=%PG_USER%','Password=%PG_PASS%','SSLMode=disable') -ErrorAction Stop; Write-Host '      DSN 64-bit criado' } catch { Write-Host '      DSN 64-bit: driver ODBC nao encontrado (instale psqlodbc)' }" 2>nul
 
