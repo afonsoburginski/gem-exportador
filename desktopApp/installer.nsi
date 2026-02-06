@@ -76,6 +76,10 @@ Section "Install"
   SetOutPath "$INSTDIR\runtime"
   File /r "${APP_DIR}\runtime\*.*"
 
+  ; Scripts (processar-inventor.vbs e outros)
+  SetOutPath "$INSTDIR\scripts"
+  File /r "..\scripts\*.*"
+
   SetOutPath "$INSTDIR"
 
   ; ============================================
