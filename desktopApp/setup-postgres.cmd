@@ -54,10 +54,14 @@ if exist "%PG_DIR%\bin\pg_ctl.exe" (
 :: ============================================
 echo [2/6] Baixando PostgreSQL 16 (pode levar alguns minutos)...
 
-set PG_ZIP=%TEMP%\postgresql-binaries.zip
+:: Usa nome unico para evitar conflito com arquivo travado
+set PG_ZIP=%TEMP%\pgsql-%RANDOM%%RANDOM%.zip
 
-if exist "%PG_ZIP%" del /f "%PG_ZIP%"
+:: Tenta limpar downloads anteriores travados
+del /f /q "%TEMP%\postgresql-binaries.zip" >nul 2>&1
+del /f /q "%TEMP%\pgsql-*.zip" >nul 2>&1
 
+echo       Baixando para %PG_ZIP%...
 curl.exe -L -o "%PG_ZIP%" "%PG_URL%"
 if %errorlevel% neq 0 (
     echo       ERRO: Falha ao baixar PostgreSQL!
@@ -65,11 +69,20 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Verifica se o arquivo foi baixado
+:: Verifica se o arquivo foi baixado e tem tamanho > 0
 if not exist "%PG_ZIP%" (
     echo       ERRO: Arquivo nao foi baixado!
     exit /b 1
 )
+
+for %%A in ("%PG_ZIP%") do set FILE_SIZE=%%~zA
+if "%FILE_SIZE%"=="0" (
+    echo       ERRO: Arquivo baixado esta vazio!
+    del /f "%PG_ZIP%" >nul 2>&1
+    exit /b 1
+)
+
+echo       Download concluido (%FILE_SIZE% bytes)
 
 :: ============================================
 :: 3. Extrair PostgreSQL
@@ -86,6 +99,7 @@ if exist "%PG_DIR%" rmdir /s /q "%PG_DIR%"
 powershell -Command "Expand-Archive -Path '%PG_ZIP%' -DestinationPath 'C:\gem-exportador' -Force"
 if %errorlevel% neq 0 (
     echo       ERRO: Falha ao extrair PostgreSQL!
+    del /f "%PG_ZIP%" >nul 2>&1
     exit /b 1
 )
 
@@ -123,14 +137,21 @@ if %INIT_RESULT% neq 0 (
     exit /b 1
 )
 
-:: Configura postgresql.conf para aceitar conexoes locais
+:: Configura postgresql.conf para aceitar conexoes de rede
 >> "%PG_DATA%\postgresql.conf" (
     echo.
     echo # GEM Exportador config
-    echo listen_addresses = 'localhost'
+    echo listen_addresses = '*'
     echo port = %PG_PORT%
     echo logging_collector = on
     echo log_directory = 'log'
+)
+
+:: Configura pg_hba.conf para aceitar conexoes da rede local com senha
+>> "%PG_DATA%\pg_hba.conf" (
+    echo.
+    echo # Acesso remoto da rede local (GEM Exportador)
+    echo host    all    all    0.0.0.0/0    md5
 )
 
 echo       Banco inicializado com sucesso!
@@ -166,6 +187,10 @@ powershell -Command "try { $tcp = New-Object System.Net.Sockets.TcpClient; $tcp.
 if %errorlevel% neq 0 goto :wait_pg
 
 echo       PostgreSQL rodando!
+
+:: Libera porta 5432 no Firewall do Windows (para acesso remoto)
+netsh advfirewall firewall add rule name="PostgreSQL GEM" dir=in action=allow protocol=TCP localport=%PG_PORT% >nul 2>&1
+echo       Firewall: porta %PG_PORT% liberada
 
 :: ============================================
 :: 6. Criar banco de dados
