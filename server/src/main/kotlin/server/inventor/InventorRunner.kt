@@ -124,15 +124,36 @@ object InventorRunner {
     )
 
     /**
+     * Etapas de progresso estimado por formato (0-100).
+     * Cada etapa tem uma porcentagem-alvo e uma descrição.
+     */
+    object ProgressStages {
+        const val QUEUED = 0           // Na fila
+        const val VBS_STARTING = 5     // VBScript iniciando
+        const val VBS_RUNNING = 10     // VBScript rodando, comando.txt escrito
+        const val INVENTOR_OPENING = 20 // Inventor abrindo documento (estimado)
+        const val EXPORT_STARTED = 35  // SaveCopyAs chamado (estimado)
+        const val EXPORT_WAITING = 40  // Aguardando arquivo no disco
+        const val EXPORT_MAX_WAIT = 88 // Máximo durante espera (antes de finalizar)
+        const val FILE_FOUND = 92     // Arquivo encontrado
+        const val DONE = 100          // Concluído
+    }
+
+    /**
      * Executa cscript processar-inventor.vbs para um formato.
      * Bloqueia até o VBS terminar (o VBS por sua vez espera o macro Inventor gravar sucesso.txt ou erro.txt).
+     *
+     * @param onProgress callback chamado com progresso estimado (0-100) durante a execução
      */
     fun run(
         arquivoEntrada: String,
         pastaSaida: String,
         formato: String,
-        pastaControle: File
+        pastaControle: File,
+        onProgress: (Int) -> Unit = {}
     ): Result {
+        onProgress(ProgressStages.VBS_STARTING)
+
         if (!isWindows()) {
             AppLog.warn("InventorRunner: processamento só disponível no Windows")
             return Result(false, null, "Processamento Inventor só disponível no Windows")
@@ -173,6 +194,8 @@ object InventorRunner {
         val formatoNorm = formato.trim().lowercase()
         val controlePath = pastaControle.absolutePath
 
+        onProgress(ProgressStages.VBS_RUNNING)
+
         val pb = ProcessBuilder(
             "cscript",
             "//Nologo",
@@ -186,22 +209,84 @@ object InventorRunner {
         pb.directory(script.parentFile)
         AppLog.info("Executando VBS: ${script.absolutePath} entrada=$arquivoEntrada saida=$pastaSaidaNorm formato=$formatoNorm")
         val process = pb.start()
-        val stderr = process.errorStream.bufferedReader().readText()
-        val stdout = process.inputStream.bufferedReader().readText()
-        val finished = process.waitFor(TIMEOUT_MINUTES.toLong(), java.util.concurrent.TimeUnit.MINUTES)
-        if (!finished) {
-            process.destroyForcibly()
-            AppLog.error("Timeout Inventor: processamento excedeu $TIMEOUT_MINUTES minutos. stderr: $stderr")
-            return Result(false, null, "Timeout: processamento excedeu $TIMEOUT_MINUTES minutos. $stderr")
+
+        // Lê stdout/stderr em threads separadas para não bloquear
+        var stderrContent = ""
+        var stdoutContent = ""
+        val stderrThread = Thread { stderrContent = process.errorStream.bufferedReader().readText() }.also { it.start() }
+        val stdoutThread = Thread { stdoutContent = process.inputStream.bufferedReader().readText() }.also { it.start() }
+
+        // =============================================
+        // Loop de progresso suave enquanto VBS roda
+        // =============================================
+        val timeoutMs = TIMEOUT_MINUTES * 60_000L
+        val startTime = System.currentTimeMillis()
+        var currentProgress = ProgressStages.VBS_RUNNING  // 10
+        val isDwg = formatoNorm == "dwg"
+
+        // Tempos estimados por etapa (ms desde o início)
+        // DWG demora muito mais, então as etapas são mais espaçadas
+        val estimatedOpenMs  = if (isDwg) 15_000L else 5_000L    // Inventor abrindo doc
+        val estimatedExportMs = if (isDwg) 30_000L else 10_000L  // SaveCopyAs iniciado
+        val estimatedWaitMs  = if (isDwg) 60_000L else 20_000L   // Aguardando arquivo
+
+        while (process.isAlive) {
+            val elapsed = System.currentTimeMillis() - startTime
+
+            // Timeout check
+            if (elapsed >= timeoutMs) {
+                process.destroyForcibly()
+                stderrThread.join(2000)
+                stdoutThread.join(2000)
+                val errInfo = stderrContent.ifBlank { stdoutContent }.trim().take(300)
+                AppLog.error("Timeout Inventor: processamento excedeu $TIMEOUT_MINUTES minutos. $errInfo")
+                return Result(false, null, "Timeout: processamento excedeu $TIMEOUT_MINUTES minutos. $errInfo")
+            }
+
+            // Estimativa de progresso por tempo decorrido
+            val newProgress = when {
+                elapsed < estimatedOpenMs ->
+                    ProgressStages.VBS_RUNNING + ((ProgressStages.INVENTOR_OPENING - ProgressStages.VBS_RUNNING) * elapsed / estimatedOpenMs).toInt()
+                elapsed < estimatedExportMs ->
+                    ProgressStages.INVENTOR_OPENING + ((ProgressStages.EXPORT_STARTED - ProgressStages.INVENTOR_OPENING) * (elapsed - estimatedOpenMs) / (estimatedExportMs - estimatedOpenMs)).toInt()
+                elapsed < estimatedWaitMs ->
+                    ProgressStages.EXPORT_STARTED + ((ProgressStages.EXPORT_WAITING - ProgressStages.EXPORT_STARTED) * (elapsed - estimatedExportMs) / (estimatedWaitMs - estimatedExportMs)).toInt()
+                else -> {
+                    // Após o tempo de espera estimado, cresce lentamente até EXPORT_MAX_WAIT
+                    // Usa curva logarítmica para desacelerar conforme demora mais
+                    val extraElapsed = elapsed - estimatedWaitMs
+                    val extraRange = ProgressStages.EXPORT_MAX_WAIT - ProgressStages.EXPORT_WAITING
+                    val factor = (Math.log10(1.0 + extraElapsed / 10_000.0) / Math.log10(1.0 + timeoutMs / 10_000.0)).coerceIn(0.0, 1.0)
+                    (ProgressStages.EXPORT_WAITING + (extraRange * factor).toInt())
+                }
+            }.coerceIn(currentProgress, ProgressStages.EXPORT_MAX_WAIT)  // Nunca regride
+
+            if (newProgress > currentProgress) {
+                currentProgress = newProgress
+                onProgress(currentProgress)
+            }
+
+            Thread.sleep(3_000)  // Atualiza a cada 3 segundos
         }
-        if (process.exitValue() != 0) {
-            val msg = (stderr.ifBlank { stdout }).trim().take(500)
-            AppLog.error("VBS retornou código ${process.exitValue()}: $msg")
-            return Result(false, null, "Script VBS retornou erro (código ${process.exitValue()}): $msg")
+
+        // Processo terminou — aguarda threads de leitura
+        stderrThread.join(5000)
+        stdoutThread.join(5000)
+
+        val exitCode = process.exitValue()
+        if (exitCode != 0) {
+            val msg = (stderrContent.ifBlank { stdoutContent }).trim().take(500)
+            AppLog.error("VBS retornou código $exitCode: $msg")
+            return Result(false, null, "Script VBS retornou erro (código $exitCode): $msg")
         }
+
+        onProgress(ProgressStages.FILE_FOUND)
+
         val nomeBase = File(arquivoEntrada).nameWithoutExtension
         val arquivoEsperado = File(pastaSaidaNorm.trim(), "$nomeBase.$formatoNorm")
         val caminhoReal = if (arquivoEsperado.exists()) arquivoEsperado.absolutePath else null
+
+        onProgress(ProgressStages.DONE)
         return Result(true, caminhoReal, null)
     }
 }

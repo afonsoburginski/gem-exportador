@@ -38,9 +38,43 @@ class ProcessingQueue(
     private var currentItem: Item? = null
     private var processorJob: Job? = null
 
+    /**
+     * Progresso individual por formato: chave = "desenhoId:formato", valor = 0..100
+     * Formatos concluídos = 100, na fila = 0, em processamento = valor intermediário
+     */
+    private val progressoPorFormato = mutableMapOf<String, Int>()
+
     init {
         processorJob = CoroutineScope(Dispatchers.Default).launch {
             processLoop()
+        }
+    }
+
+    /**
+     * Calcula progresso global (0..100) como média dos progressos individuais por formato.
+     */
+    private fun calcularProgressoGlobal(desenhoId: String, formatosSolicitados: List<String>): Int {
+        if (formatosSolicitados.isEmpty()) return 100
+        val soma = formatosSolicitados.sumOf { fmt ->
+            progressoPorFormato["$desenhoId:$fmt"] ?: 0
+        }
+        return (soma / formatosSolicitados.size).coerceIn(0, 100)
+    }
+
+    /**
+     * Atualiza o progresso de um formato e faz broadcast do progresso global.
+     * Chamado de dentro de uma thread bloqueante (InventorRunner), então usa runBlocking para broadcast.
+     */
+    private fun atualizarProgressoFormato(desenhoId: String, formato: String, progresso: Int, formatosSolicitados: List<String>) {
+        val key = "$desenhoId:$formato"
+        val anterior = progressoPorFormato[key] ?: 0
+        if (progresso <= anterior) return // Nunca regride
+        progressoPorFormato[key] = progresso
+        val global = calcularProgressoGlobal(desenhoId, formatosSolicitados)
+        desenhoDao.update(desenhoId, progresso = global)
+        val updated = desenhoDao.getById(desenhoId)
+        if (updated != null) {
+            runBlocking { broadcast.sendUpdate(updated) }
         }
     }
 
@@ -68,6 +102,8 @@ class ProcessingQueue(
                 removed = queue.size < before
             }
         }
+        // Limpa progresso deste desenho
+        progressoPorFormato.keys.filter { it.startsWith("$desenhoId:") }.forEach { progressoPorFormato.remove(it) }
         return removed
     }
 
@@ -109,7 +145,19 @@ class ProcessingQueue(
                 continue
             }
 
-            desenhoDao.update(item.desenhoId, status = "processando")
+            // Inicializa progresso dos formatos para este desenho
+            val formatosSolicitados = desenho.formatosSolicitados.ifEmpty { listOf("pdf") }
+            formatosSolicitados.forEach { fmt ->
+                val key = "${item.desenhoId}:$fmt"
+                if (key !in progressoPorFormato) progressoPorFormato[key] = 0
+            }
+            // Marca formatos já concluídos anteriormente como 100%
+            desenho.arquivosProcessados.forEach { arq ->
+                val key = "${item.desenhoId}:${arq.tipo.lowercase()}"
+                progressoPorFormato[key] = 100
+            }
+
+            desenhoDao.update(item.desenhoId, status = "processando", progresso = calcularProgressoGlobal(item.desenhoId, formatosSolicitados))
             broadcast.sendUpdate(desenhoDao.getById(item.desenhoId)!!)
             val tentativaInfo = if (item.tentativa > 1) " [tentativa ${item.tentativa}/$MAX_TENTATIVAS]" else ""
             AppLog.info("Processando desenho ${item.desenhoId} formato ${item.formato}$tentativaInfo (entrada: ${desenho.nomeArquivo})")
@@ -132,7 +180,9 @@ class ProcessingQueue(
             val pastaControle = InventorRunner.pastaControle()
 
             val result = withContext(Dispatchers.IO) {
-                InventorRunner.run(arquivoEntrada, pastaSaida, item.formato, pastaControle)
+                InventorRunner.run(arquivoEntrada, pastaSaida, item.formato, pastaControle) { progressoFormato ->
+                    atualizarProgressoFormato(item.desenhoId, item.formato, progressoFormato, formatosSolicitados)
+                }
             }
 
             desenho = desenhoDao.getById(item.desenhoId)!!
@@ -142,13 +192,14 @@ class ProcessingQueue(
             }
 
             val existentes = desenho.arquivosProcessados.toMutableList()
-            val formatosSolicitados = desenho.formatosSolicitados.ifEmpty { listOf("pdf") }
             
             // Rastrear formatos com erro
             val errosAnteriores = desenho.erro?.split(";")?.filter { it.isNotBlank() }?.toMutableList() ?: mutableListOf()
             
             if (result.success && result.arquivoGerado != null) {
                 AppLog.info("Formato ${item.formato} concluído para ${item.desenhoId}: ${result.arquivoGerado}")
+                // Marca formato como 100%
+                progressoPorFormato["${item.desenhoId}:${item.formato}"] = 100
                 val novo = ArquivoProcessado(
                     nome = File(result.arquivoGerado).name,
                     tipo = item.formato,
@@ -186,7 +237,7 @@ class ProcessingQueue(
                 errosAnteriores.add("${item.formato}: falhou após ${MAX_TENTATIVAS} tentativas")
             }
             
-            // Calcula progresso: conta formatos concluídos com sucesso
+            // Calcula progresso via sistema de progresso por formato
             val totalFormatos = formatosSolicitados.size
             val concluidos = formatosSolicitados.count { fmt ->
                 existentes.any { it.tipo.equals(fmt, ignoreCase = true) }
@@ -212,7 +263,7 @@ class ProcessingQueue(
                 else -> "processando"
             }
             
-            val progresso = if (totalFormatos == 0) 100 else (100 * concluidos / totalFormatos).coerceIn(0, 100)
+            val progresso = calcularProgressoGlobal(item.desenhoId, formatosSolicitados)
             
             desenhoDao.update(
                 item.desenhoId,
@@ -223,6 +274,13 @@ class ProcessingQueue(
             )
             val updated = desenhoDao.getById(item.desenhoId)
             if (updated != null) broadcast.sendUpdate(updated)
+
+            // Limpa progresso do mapa quando desenho termina completamente
+            if (todoProcessado) {
+                formatosSolicitados.forEach { fmt ->
+                    progressoPorFormato.remove("${item.desenhoId}:$fmt")
+                }
+            }
             currentItem = null
         }
     }
