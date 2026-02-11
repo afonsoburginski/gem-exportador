@@ -272,11 +272,18 @@ Private Function ExportarDWGInterno(oDoc As Document, sArquivoSaida As String) A
             Set oDataMedium = oApp.TransientObjects.CreateDataMedium
             oDataMedium.FileName = sArquivoSaida
             
+            ' Preencher opcoes padrao para suprimir dialogo de exportacao
+            If oTranslatorAddInDWG.HasSaveCopyAsOptions(oDrawingDoc, oTranslationContext, oOptions) Then
+                Print #logNum, "OK: Opcoes padrao carregadas via HasSaveCopyAsOptions"
+            Else
+                Print #logNum, "AVISO: HasSaveCopyAsOptions retornou False (usando opcoes vazias)"
+            End If
+            
             ' Ativar modo silencioso para suprimir dialogos
             Print #logNum, "Ativando SilentOperation..."
             oApp.SilentOperation = True
             
-            Print #logNum, "Chamando SaveCopyAs com opcoes vazias..."
+            Print #logNum, "Chamando SaveCopyAs com opcoes preenchidas..."
             ' Exportar o DWG - passa oDrawingDoc (DrawingDocument), NAO oDoc!
             On Error Resume Next
             Call oTranslatorAddInDWG.SaveCopyAs(oDrawingDoc, oTranslationContext, oOptions, oDataMedium)
@@ -346,7 +353,13 @@ Private Function ExportarDWFInterno(oDoc As Document, sArquivoSaida As String) A
     Set oDataMedium = ThisApplication.TransientObjects.CreateDataMedium
     oDataMedium.FileName = sArquivoSaida
     
+    ' Preencher opcoes padrao
+    If oAddIn.HasSaveCopyAsOptions(oDoc, oContext, oOptions) Then
+    End If
+    
+    ThisApplication.SilentOperation = True
     Call oAddIn.SaveCopyAs(oDoc, oContext, oOptions, oDataMedium)
+    ThisApplication.SilentOperation = False
     
     ExportarDWFInterno = True
     
