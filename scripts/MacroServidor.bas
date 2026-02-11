@@ -28,7 +28,6 @@ Public Sub IniciarServicoSilencioso()
         If ThisApplication Is Nothing Then Exit Do
         If Not ThisApplication.Ready Then Exit Do
         
-        ' Pasta de controle: lida de C:\jhonrob_controle_pasta.txt (escrito pelo VBS); fallback generico se nao existir
         sBaseControle = LerPastaControle(fso)
         sComando = sBaseControle & "\comando.txt"
         
@@ -51,7 +50,6 @@ Public Sub IniciarServicoSilencioso()
             fso.DeleteFile sComando, True
             
             If Len(sArquivoEntrada) > 0 And Len(sArquivoSaida) > 0 Then
-                ' Diagnostico: gravar que o macro recebeu o comando (pasta de controle)
                 Call EscreverLinhaArquivo(fso, sBaseControle & "\macro_recebeu.txt", "OK " & Format(Now(), "yyyy-mm-dd hh:nn:ss") & " " & sArquivoEntrada)
                 Call ProcessarComando(fso, sArquivoEntrada, sArquivoSaida, sFormato, sBaseControle)
             End If
@@ -81,7 +79,6 @@ Private Function LerPastaControle(fso As Object) As String
     Dim sControlePath As String
     Dim sLinha As String
     LerPastaControle = "C:\jhonrob_inventor_controle"
-    ' 1) Ler de %APPDATA%\JhonRob\ (mesmo usuario que o VBS)
     sControlePath = Environ("APPDATA") & "\JhonRob\jhonrob_controle_pasta.txt"
     If fso.FileExists(sControlePath) Then
         Set oFile = fso.OpenTextFile(sControlePath, 1)
@@ -92,7 +89,6 @@ Private Function LerPastaControle(fso As Object) As String
         If Not oFile Is Nothing Then oFile.Close
         Set oFile = Nothing
     End If
-    ' 2) Fallback: C:\ (ex.: Inventor aberto "como administrador")
     If LerPastaControle = "C:\jhonrob_inventor_controle" And fso.FileExists("C:\jhonrob_controle_pasta.txt") Then
         Set oFile = fso.OpenTextFile("C:\jhonrob_controle_pasta.txt", 1)
         If Not oFile Is Nothing And Not oFile.AtEndOfStream Then
@@ -102,7 +98,6 @@ Private Function LerPastaControle(fso As Object) As String
         If Not oFile Is Nothing Then oFile.Close
         Set oFile = Nothing
     End If
-    ' 3) Fallback fixo: T: (drive mapeado) ou UNC (mesmo recurso; VBA pode preferir T:)
     If LerPastaControle = "C:\jhonrob_inventor_controle" Then
         If fso.FolderExists("T:\desenhos gerenciador 3D\processados") Then
             LerPastaControle = "T:\desenhos gerenciador 3D\processados"
@@ -120,7 +115,6 @@ Private Sub ProcessarComando(fso As Object, sArquivoEntrada As String, sArquivoS
     Dim bAbrimos As Boolean
     bAbrimos = False
     
-    ' Modo silencioso TOTAL - suprime TODOS os dialogos (salvar, exportar, etc.)
     ThisApplication.SilentOperation = True
     
     Set oDoc = ThisApplication.ActiveDocument
@@ -147,15 +141,13 @@ Private Sub ProcessarComando(fso As Object, sArquivoEntrada As String, sArquivoS
             bSucesso = ExportarDWFInterno(oDoc, sArquivoSaida)
     End Select
     
-    ' Fechar documento se nos abrimos (SilentOperation ainda True - sem dialogo "salvar alteracoes")
     If bAbrimos Then
         On Error Resume Next
-        oDoc.Close True  ' Close skipSave=True (descarta alteracoes silenciosamente)
+        oDoc.Close True
         Err.Clear
         On Error GoTo ErrorHandler
     End If
     
-    ' So desliga SilentOperation APOS fechar o documento
     ThisApplication.SilentOperation = False
     
     If Len(sBaseControle) = 0 Then sBaseControle = LerPastaControle(fso)
@@ -220,141 +212,159 @@ Private Function ExportarDWGInterno(oDoc As Document, sArquivoSaida As String) A
     
     Dim oApp As Application
     Dim oDrawingDoc As DrawingDocument
-    Dim oTranslatorAddInDWG As TranslatorAddIn
-    Dim oTranslationContext As TranslationContext
+    Dim oTranslator As TranslatorAddIn
+    Dim oContext As TranslationContext
     Dim oOptions As NameValueMap
     Dim oDataMedium As DataMedium
-    Dim addIn As ApplicationAddIn
-    Dim addInFound As Boolean
     Dim fso As Object
     Dim logFile As String
     Dim logNum As Integer
+    Dim iWait As Integer
     Dim sTempFile As String
+    Dim lSize As Long
     
     Set oApp = ThisApplication
     Set fso = CreateObject("Scripting.FileSystemObject")
     
-    ' Log para debug
     logFile = "C:\gem-exportador\logs\gem-dwg-debug.log"
     If Not fso.FolderExists("C:\gem-exportador") Then fso.CreateFolder "C:\gem-exportador"
     If Not fso.FolderExists("C:\gem-exportador\logs") Then fso.CreateFolder "C:\gem-exportador\logs"
     logNum = FreeFile
     Open logFile For Output As #logNum
     Print #logNum, "=== ExportarDWGInterno " & Now & " ==="
-    Print #logNum, "Arquivo saida: " & sArquivoSaida
-    Print #logNum, "DocumentType: " & oDoc.DocumentType
+    Print #logNum, "Saida: " & sArquivoSaida
+    Print #logNum, "DocType: " & oDoc.DocumentType
     
     If oDoc.DocumentType <> kDrawingDocumentObject Then
-        Print #logNum, "ERRO: Documento NAO e DrawingDocument"
+        Print #logNum, "ERRO: Nao e DrawingDocument"
         GoTo Cleanup
     End If
     
-    Print #logNum, "OK: Documento e DrawingDocument"
     Set oDrawingDoc = oDoc
-    
-    ' Procurar AddIn DWG
-    addInFound = False
-    For Each addIn In oApp.ApplicationAddIns
-        If addIn.ClassIdString = "{C24E3AC2-122E-11D5-8E91-0010B541CD80}" Then
-            Set oTranslatorAddInDWG = addIn
-            addInFound = True
-            Print #logNum, "OK: AddIn encontrado: " & addIn.DisplayName
-            Exit For
-        End If
-    Next addIn
-    
-    If Not addInFound Then
-        Print #logNum, "ERRO: AddIn DWG nao encontrado!"
-        GoTo Cleanup
-    End If
-    
-    ' Ativar AddIn se necessario (essencial!)
-    If Not oTranslatorAddInDWG.Activated Then
-        Print #logNum, "Ativando AddIn DWG..."
-        oTranslatorAddInDWG.Activate
-    End If
-    
-    ' Criar contexto, opcoes e data medium
-    Set oTranslationContext = oApp.TransientObjects.CreateTranslationContext
-    oTranslationContext.Type = kFileBrowseIOMechanism
-    Set oOptions = oApp.TransientObjects.CreateNameValueMap
-    Set oDataMedium = oApp.TransientObjects.CreateDataMedium
-    
-    ' Salvar em arquivo TEMP local primeiro (evita problemas com path de rede)
     sTempFile = Environ("TEMP") & "\" & fso.GetBaseName(sArquivoSaida) & ".dwg"
-    Print #logNum, "Arquivo temp: " & sTempFile
     
-    ' Deletar temp anterior se existir
     On Error Resume Next
     If fso.FileExists(sTempFile) Then fso.DeleteFile sTempFile, True
+    If fso.FileExists(sArquivoSaida) Then fso.DeleteFile sArquivoSaida, True
     Err.Clear
     On Error GoTo ErrorHandler
     
+    Print #logNum, "--- Padrao Module1 DXF: ItemById + Options vazio + DrawingDoc ---"
+    
+    On Error Resume Next
+    Set oTranslator = oApp.ApplicationAddIns.ItemById("{C24E3AC2-122E-11D5-8E91-0010B541CD80}")
+    If Err.Number <> 0 Or oTranslator Is Nothing Then
+        Err.Clear
+        Print #logNum, "AddIn 8E91 nao encontrado, tentando 8E3B..."
+        Set oTranslator = oApp.ApplicationAddIns.ItemById("{C24E3AC2-122E-11D5-8E3B-0010B541CD80}")
+    End If
+    If Err.Number <> 0 Or oTranslator Is Nothing Then
+        Err.Clear
+        Print #logNum, "ERRO: Nenhum AddIn DWG encontrado"
+        GoTo Cleanup
+    End If
+    Err.Clear
+    On Error GoTo ErrorHandler
+    
+    Print #logNum, "AddIn: " & oTranslator.DisplayName & " [" & oTranslator.ClassIdString & "]"
+    
+    If Not oTranslator.Activated Then oTranslator.Activate
+    
+    Set oContext = oApp.TransientObjects.CreateTranslationContext
+    oContext.Type = kFileBrowseIOMechanism
+    Set oOptions = oApp.TransientObjects.CreateNameValueMap
+    Set oDataMedium = oApp.TransientObjects.CreateDataMedium
     oDataMedium.FileName = sTempFile
     
-    ' Preencher opcoes padrao (suprime dialogo de configuracao)
-    If oTranslatorAddInDWG.HasSaveCopyAsOptions(oDrawingDoc, oTranslationContext, oOptions) Then
-        Print #logNum, "OK: Opcoes padrao carregadas via HasSaveCopyAsOptions"
-    Else
-        Print #logNum, "AVISO: HasSaveCopyAsOptions retornou False"
-    End If
-    
-    ' Exportar DWG (SilentOperation ja esta True via ProcessarComando - NAO mexer aqui!)
-    Print #logNum, "Chamando SaveCopyAs para arquivo temp..."
+    Print #logNum, "SaveCopyAs com DrawingDoc + Options vazio -> temp local..."
     On Error Resume Next
-    Call oTranslatorAddInDWG.SaveCopyAs(oDrawingDoc, oTranslationContext, oOptions, oDataMedium)
+    Call oTranslator.SaveCopyAs(oDrawingDoc, oContext, oOptions, oDataMedium)
     If Err.Number <> 0 Then
-        Print #logNum, "ERRO em SaveCopyAs: " & Err.Number & " - " & Err.Description
+        Print #logNum, "Erro: " & Err.Number & " - " & Err.Description
         Err.Clear
     Else
-        Print #logNum, "SaveCopyAs executado sem erro"
+        Print #logNum, "SaveCopyAs OK (sem erro)"
     End If
     On Error GoTo ErrorHandler
     
-    ' Verificar se o temp foi criado
+    DoEvents
+    Sleep 3000
+    DoEvents
+    
+    If Not fso.FileExists(sTempFile) Then
+        Print #logNum, "Aguardando arquivo temp..."
+        For iWait = 1 To 30
+            DoEvents
+            Sleep 1000
+            If fso.FileExists(sTempFile) Then
+                Print #logNum, "Arquivo apareceu em " & (iWait + 3) & "s"
+                Exit For
+            End If
+            If iWait Mod 10 = 0 Then Print #logNum, "  " & (iWait + 3) & "s..."
+        Next iWait
+    End If
+    
     If fso.FileExists(sTempFile) Then
-        Print #logNum, "OK: Arquivo temp criado, copiando para destino final..."
-        ' Copiar para destino final (sobrescreve se existir)
-        On Error Resume Next
-        fso.CopyFile sTempFile, sArquivoSaida, True
-        If Err.Number <> 0 Then
-            Print #logNum, "ERRO ao copiar: " & Err.Number & " - " & Err.Description
+        lSize = fso.GetFile(sTempFile).Size
+        Print #logNum, "Temp criado: " & lSize & " bytes"
+        If lSize > 100 Then
+            On Error Resume Next
+            fso.CopyFile sTempFile, sArquivoSaida, True
+            If Err.Number = 0 Then
+                Print #logNum, "SUCESSO: copiado para " & sArquivoSaida
+                ExportarDWGInterno = True
+            Else
+                Print #logNum, "Erro copiar para rede: " & Err.Description
+                Err.Clear
+            End If
+            fso.DeleteFile sTempFile, True
             Err.Clear
-        Else
-            Print #logNum, "SUCESSO: Arquivo copiado para " & sArquivoSaida
-            ExportarDWGInterno = True
+            On Error GoTo ErrorHandler
+            If ExportarDWGInterno Then GoTo Cleanup
         End If
-        ' Limpar temp
-        On Error Resume Next
-        fso.DeleteFile sTempFile, True
-        Err.Clear
-        On Error GoTo ErrorHandler
     Else
-        Print #logNum, "FALHA: Arquivo temp NAO foi criado"
-        Print #logNum, "Tentando fallback: SaveCopyAs direto no destino..."
-        
-        ' Fallback: tenta direto no destino
-        oDataMedium.FileName = sArquivoSaida
-        On Error Resume Next
-        Call oTranslatorAddInDWG.SaveCopyAs(oDrawingDoc, oTranslationContext, oOptions, oDataMedium)
-        If Err.Number <> 0 Then
-            Print #logNum, "ERRO fallback: " & Err.Number & " - " & Err.Description
-            Err.Clear
-        End If
-        On Error GoTo ErrorHandler
-        
-        If fso.FileExists(sArquivoSaida) Then
-            Print #logNum, "SUCESSO via fallback!"
-            ExportarDWGInterno = True
-        Else
-            Print #logNum, "FALHA total: nenhum metodo criou o arquivo"
-        End If
+        Print #logNum, "Temp NAO criado com Options vazio"
+    End If
+    
+    Print #logNum, "--- Fallback: SaveCopyAs direto na rede ---"
+    Set oOptions = oApp.TransientObjects.CreateNameValueMap
+    Set oDataMedium = oApp.TransientObjects.CreateDataMedium
+    oDataMedium.FileName = sArquivoSaida
+    
+    On Error Resume Next
+    Call oTranslator.SaveCopyAs(oDrawingDoc, oContext, oOptions, oDataMedium)
+    If Err.Number <> 0 Then
+        Print #logNum, "Fallback erro: " & Err.Number & " - " & Err.Description
+        Err.Clear
+    Else
+        Print #logNum, "Fallback SaveCopyAs OK"
+    End If
+    On Error GoTo ErrorHandler
+    
+    DoEvents
+    Sleep 3000
+    DoEvents
+    
+    If Not fso.FileExists(sArquivoSaida) Then
+        For iWait = 1 To 30
+            DoEvents
+            Sleep 1000
+            If fso.FileExists(sArquivoSaida) Then Exit For
+            If iWait Mod 10 = 0 Then Print #logNum, "  Rede " & (iWait + 3) & "s..."
+        Next iWait
+    End If
+    
+    If fso.FileExists(sArquivoSaida) Then
+        Print #logNum, "SUCESSO fallback: " & sArquivoSaida
+        ExportarDWGInterno = True
+    Else
+        Print #logNum, "FALHA TOTAL"
     End If
     
     Set oDataMedium = Nothing
     Set oOptions = Nothing
-    Set oTranslationContext = Nothing
-    Set oTranslatorAddInDWG = Nothing
+    Set oContext = Nothing
+    Set oTranslator = Nothing
 
 Cleanup:
     Close #logNum
@@ -362,7 +372,6 @@ Cleanup:
     Exit Function
     
 ErrorHandler:
-    ' NAO mexer em SilentOperation aqui - ProcessarComando cuida disso
     Print #logNum, "ERRO FATAL: " & Err.Number & " - " & Err.Description
     Close #logNum
     Set fso = Nothing
@@ -393,11 +402,9 @@ Private Function ExportarDWFInterno(oDoc As Document, sArquivoSaida As String) A
     Set oDataMedium = ThisApplication.TransientObjects.CreateDataMedium
     oDataMedium.FileName = sArquivoSaida
     
-    ' Preencher opcoes padrao
     If oAddIn.HasSaveCopyAsOptions(oDoc, oContext, oOptions) Then
     End If
     
-    ' SilentOperation ja esta True via ProcessarComando
     Call oAddIn.SaveCopyAs(oDoc, oContext, oOptions, oDataMedium)
     
     ExportarDWFInterno = True

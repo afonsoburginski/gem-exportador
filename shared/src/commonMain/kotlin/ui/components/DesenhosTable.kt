@@ -880,13 +880,14 @@ private fun FormatosCell(desenho: DesenhoAutodesk, modifier: Modifier = Modifier
             formatos.forEachIndexed { idx, formato ->
                 val gerado = desenho.formatoJaGerado(formato)
                 val emProcessamento = status == DesenhoStatus.PROCESSANDO && !gerado
-                val mostrarSpinner = emProcessamento && progresso > 0 && idx == primeiroPendenteIdx
+                val mostrarSpinner = emProcessamento && idx == primeiroPendenteIdx
                 
                 FormatoBadge(
                     formato = formato,
                     gerado = gerado,
                     status = status,
-                    emProcessamento = mostrarSpinner,
+                    emProcessamento = emProcessamento,
+                    mostrarSpinner = mostrarSpinner,
                     progresso = progresso,
                     isCompact = isCompact
                 )
@@ -901,6 +902,7 @@ private fun FormatoBadge(
     gerado: Boolean,
     status: DesenhoStatus,
     emProcessamento: Boolean = false,
+    mostrarSpinner: Boolean = false,
     progresso: Int = 0,
     isCompact: Boolean = false
 ) {
@@ -931,7 +933,7 @@ private fun FormatoBadge(
                 modifier = Modifier.size(if (isCompact) 10.dp else 12.dp)
             )
         }
-        if (emProcessamento && !isCompact) {
+        if (mostrarSpinner && !isCompact) {
             CircularProgressIndicator(
                 modifier = Modifier.size(12.dp),
                 strokeWidth = 1.5.dp,

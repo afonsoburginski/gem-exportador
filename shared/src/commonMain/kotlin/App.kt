@@ -139,8 +139,8 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
         DesenhoActions(
             onRetry = { desenho ->
                 logToFile("INFO", "Reenviar solicitado: ${desenho.nomeArquivo} (${desenho.id})")
-                // UI OTIMISTA: atualiza local imediatamente para feedback instantâneo
-                repository.updateStatus(desenho.id, "pendente", getCurrentDateTime())
+                // UI OTIMISTA: atualiza local para processando para feedback visual azul imediato
+                repository.updateStatus(desenho.id, "processando", getCurrentDateTime())
                 scope.launch(Dispatchers.Default) {
                     if (apiClient != null) {
                         apiClient.retry(desenho.id) // servidor processa e WebSocket sincroniza
