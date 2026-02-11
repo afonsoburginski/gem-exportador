@@ -51,20 +51,34 @@ object InventorRunner {
     }
 
     /**
-     * Resolve o arquivo de entrada: se arquivoOriginal for absoluto e existir, usa; senão tenta pastaProcessamento + nome.
+     * Resolve o arquivo de entrada: tenta o caminho original, depois extensões alternativas (.idw, .iam, .ipt)
+     * no mesmo diretório. Fallback para pastaProcessamento + nome.
      */
     fun resolverArquivoEntrada(arquivoOriginal: String?, pastaProcessamento: String?, nomeArquivo: String): String {
         val raw = (arquivoOriginal ?: "").trim()
         if (raw.isNotEmpty()) {
             val f = File(raw.replace("/", File.separator))
             if (f.exists()) return f.absolutePath
+
+            // Tenta extensões alternativas no mesmo diretório do arquivo_original
+            val dir = f.parentFile
+            val nomeSemExt = f.nameWithoutExtension
+            if (dir != null) {
+                for (ext in listOf(".idw", ".iam", ".ipt")) {
+                    val alt = File(dir, nomeSemExt + ext)
+                    if (alt.exists()) {
+                        AppLog.info("Arquivo original não encontrado, usando alternativa: ${alt.absolutePath}")
+                        return alt.absolutePath
+                    }
+                }
+            }
         }
         val base = pastaProcessamento?.trim()?.takeIf { it.isNotEmpty() } ?: return ""
         val nome = nomeArquivo.trim().ifEmpty { return "" }
         val candidato = File(base, nome)
         if (candidato.exists()) return candidato.absolutePath
         val nomeSemExt = nome.substringBeforeLast(".")
-        for (ext in listOf(".ipt", ".iam", ".idw")) {
+        for (ext in listOf(".idw", ".iam", ".ipt")) {
             val alt = File(base, nomeSemExt + ext)
             if (alt.exists()) return alt.absolutePath
         }

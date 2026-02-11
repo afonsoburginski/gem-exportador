@@ -1,10 +1,14 @@
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.darkColors
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import data.ApiClient
 import data.DatabaseDriverFactory
@@ -152,9 +156,25 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
                         apiClient.cancelar(desenho.id)
                     }
                 }
+            },
+            onDelete = { desenho ->
+                logToFile("INFO", "Deletar solicitado: ${desenho.nomeArquivo} (${desenho.id})")
+                // UI OTIMISTA: deleta local imediatamente
+                repository.delete(desenho.id)
+                scope.launch(Dispatchers.Default) {
+                    if (apiClient != null) {
+                        apiClient.delete(desenho.id)
+                    }
+                }
             }
         )
     }
+
+    // Focus requester para capturar teclas (F5)
+    val focusRequester = remember { FocusRequester() }
+    
+    // Estado de refresh (F5)
+    var isRefreshing by remember { mutableStateOf(false) }
     
     MaterialTheme(colors = darkColorPalette) {
         Column(
@@ -162,14 +182,36 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
                 .fillMaxSize()
                 .background(AppColors.Background)
                 .padding(16.dp)
+                .focusRequester(focusRequester)
+                .focusable()
+                .onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.F5) {
+                        logToFile("INFO", "F5 pressionado - refresh solicitado")
+                        isRefreshing = true
+                        scope.launch(Dispatchers.Default) {
+                            realtimeClient?.refresh()
+                            delay(1200) // tempo mínimo visual do loader
+                            isRefreshing = false
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                }
         ) {
             DesenhosTable(
                 desenhos = desenhos,
                 actions = actions,
                 updateAvailable = if (updateDismissed) updateAvailable else null,
                 onUpdateClick = { showUpdateDialog = true },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                isRefreshing = isRefreshing
             )
+        }
+        
+        // Solicita foco ao iniciar para capturar teclas
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
         }
         
         // Dialog de atualização

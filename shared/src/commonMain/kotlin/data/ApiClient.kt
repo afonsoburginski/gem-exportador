@@ -51,4 +51,8 @@ class ApiClient(private val baseUrl: String) {
             contentType(ContentType.Application.Json)
         }
     }.map { }
+
+    suspend fun delete(desenhoId: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/api/desenhos/$desenhoId")
+    }.map { }
 }

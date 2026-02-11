@@ -117,6 +117,18 @@ class RealtimeClient(
     }
     
     /**
+     * Força refresh dos dados (reenvia subscribe para receber initial completo)
+     */
+    suspend fun refresh() {
+        try {
+            wsSession?.send(Frame.Text("""{"type":"subscribe","table":"desenhos"}"""))
+            logToFile("INFO", "WebSocket refresh solicitado (F5)")
+        } catch (e: Exception) {
+            logToFile("ERROR", "Erro ao solicitar refresh: ${e.message}")
+        }
+    }
+
+    /**
      * Desconecta do servidor
      */
     suspend fun disconnect() {

@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import model.DesenhoAutodesk
 import model.DesenhoStatus
 import ui.theme.AppColors
+import util.getDaysAgoDate
+import util.getTodayDate
 import util.VersionInfo
 import util.openInExplorer
 
@@ -38,8 +40,16 @@ import util.openInExplorer
  */
 data class DesenhoActions(
     val onRetry: (DesenhoAutodesk) -> Unit = {},
-    val onCancel: (DesenhoAutodesk) -> Unit = {}
+    val onCancel: (DesenhoAutodesk) -> Unit = {},
+    val onDelete: (DesenhoAutodesk) -> Unit = {}
 )
+
+/**
+ * Extrai a parte da data (yyyy-MM-dd) de um timestamp ISO-8601
+ */
+private fun extractDate(isoTimestamp: String): String {
+    return isoTimestamp.substringBefore("T").take(10)
+}
 
 /**
  * Componente de tabela para exibir desenhos
@@ -50,27 +60,74 @@ fun DesenhosTable(
     modifier: Modifier = Modifier,
     actions: DesenhoActions = DesenhoActions(),
     updateAvailable: VersionInfo? = null,
-    onUpdateClick: () -> Unit = {}
+    onUpdateClick: () -> Unit = {},
+    isRefreshing: Boolean = false
 ) {
     // Estado para mostrar/ocultar concluídos
     var mostrarConcluidos by remember { mutableStateOf(false) }
     
+    // Estado da busca
+    var searchQuery by remember { mutableStateOf("") }
+    var searchDateDe by remember { mutableStateOf("") }
+    var searchDateAte by remember { mutableStateOf("") }
+    var buscaAtiva by remember { mutableStateOf(false) }
+    var showDateFilter by remember { mutableStateOf(false) }
+    
+    // Dados da semana (padrão: últimos 7 dias corridos incluindo hoje)
+    val dataLimite = remember { getDaysAgoDate(7) }
+    
+    val desenhosSemana = remember(desenhos, dataLimite) {
+        desenhos.filter { d ->
+            // Pendentes e processando sempre visíveis
+            if (d.statusEnum == DesenhoStatus.PENDENTE || d.statusEnum == DesenhoStatus.PROCESSANDO) {
+                return@filter true
+            }
+            val dataEnvio = extractDate(d.horarioEnvio)
+            dataEnvio >= dataLimite
+        }
+    }
+    
+    // Dados da busca (quando ativa)
+    val desenhosBusca = remember(desenhos, searchQuery, searchDateDe, searchDateAte, buscaAtiva) {
+        if (!buscaAtiva) return@remember emptyList<DesenhoAutodesk>()
+        
+        desenhos.filter { d ->
+            // Filtro por nome
+            val matchNome = searchQuery.isBlank() || 
+                d.nomeArquivo.contains(searchQuery, ignoreCase = true)
+            
+            // Filtro por data (datas já em formato ISO yyyy-MM-dd)
+            val matchData = if (searchDateDe.isNotBlank() || searchDateAte.isNotBlank()) {
+                val dataEnvio = extractDate(d.horarioEnvio)
+                val matchDe = searchDateDe.isBlank() || dataEnvio >= searchDateDe
+                val matchAte = searchDateAte.isBlank() || dataEnvio <= searchDateAte
+                matchDe && matchAte
+            } else {
+                true
+            }
+            
+            matchNome && matchData
+        }
+    }
+    
+    // Fonte de dados: busca ativa ou dados semanais
+    val desenhosAtivos = if (buscaAtiva) desenhosBusca else desenhosSemana
+    
     // Separar desenhos por categoria
-    val (emFila, concluidos, comProblema) = remember(desenhos) {
+    val (emFila, concluidos, comProblema) = remember(desenhosAtivos) {
         val fila = mutableListOf<DesenhoAutodesk>()
         val ok = mutableListOf<DesenhoAutodesk>()
         val problema = mutableListOf<DesenhoAutodesk>()
         
-        desenhos.forEach { d ->
+        desenhosAtivos.forEach { d ->
             when (d.statusEnum) {
                 DesenhoStatus.PROCESSANDO, DesenhoStatus.PENDENTE -> fila.add(d)
                 DesenhoStatus.CONCLUIDO -> ok.add(d)
-                DesenhoStatus.CONCLUIDO_COM_ERROS -> problema.add(d) // Parcial fica visível para o usuário poder reenviar
+                DesenhoStatus.CONCLUIDO_COM_ERROS -> problema.add(d)
                 DesenhoStatus.ERRO, DesenhoStatus.CANCELADO -> problema.add(d)
             }
         }
         
-        // Ordenar fila: processando primeiro, depois pendentes por posição
         fila.sortWith(compareBy(
             { if (it.statusEnum == DesenhoStatus.PROCESSANDO) 0 else 1 },
             { it.posicaoFila ?: Int.MAX_VALUE }
@@ -90,8 +147,27 @@ fun DesenhosTable(
         lista
     }
     
+    // Dialog de filtro por data (Range Picker)
+    if (showDateFilter) {
+        DateRangePickerDialog(
+            currentDe = searchDateDe,
+            currentAte = searchDateAte,
+            onApply = { de, ate ->
+                searchDateDe = de  // formato ISO yyyy-MM-dd
+                searchDateAte = ate
+                buscaAtiva = searchQuery.isNotBlank() || de.isNotBlank() || ate.isNotBlank()
+                showDateFilter = false
+            },
+            onClear = {
+                searchDateDe = ""
+                searchDateAte = ""
+                showDateFilter = false
+            },
+            onDismiss = { showDateFilter = false }
+        )
+    }
+    
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        // Layout compacto para telas < 700dp de largura
         val isCompact = maxWidth < 700.dp
         
         Column(
@@ -111,7 +187,21 @@ fun DesenhosTable(
                 onToggleConcluidos = { mostrarConcluidos = !mostrarConcluidos },
                 updateAvailable = updateAvailable,
                 onUpdateClick = onUpdateClick,
-                isCompact = isCompact
+                isCompact = isCompact,
+                searchQuery = searchQuery,
+                onSearchChange = { query ->
+                    searchQuery = query
+                    buscaAtiva = query.isNotBlank() || searchDateDe.isNotBlank() || searchDateAte.isNotBlank()
+                },
+                onClearSearch = {
+                    searchQuery = ""
+                    searchDateDe = ""
+                    searchDateAte = ""
+                    buscaAtiva = false
+                },
+                buscaAtiva = buscaAtiva,
+                hasDateFilter = searchDateDe.isNotBlank() || searchDateAte.isNotBlank(),
+                onDateFilterClick = { showDateFilter = true }
             )
             
             Divider(color = AppColors.Border, thickness = 1.dp)
@@ -121,20 +211,48 @@ fun DesenhosTable(
             
             Divider(color = AppColors.Border, thickness = 1.dp)
             
-            // Rows
-            if (desenhosExibidos.isEmpty()) {
-                EmptyState()
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(desenhosExibidos, key = { it.id }) { desenho ->
-                        TableRowWithContextMenu(
-                            desenho = desenho,
-                            actions = actions,
-                            isCompact = isCompact
-                        )
-                        Divider(color = AppColors.Border, thickness = 1.dp)
+            // Rows com overlay de refresh
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (desenhosExibidos.isEmpty() && !isRefreshing) {
+                    EmptyState()
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(desenhosExibidos, key = { it.id }) { desenho ->
+                            TableRowWithContextMenu(
+                                desenho = desenho,
+                                actions = actions,
+                                isCompact = isCompact
+                            )
+                            Divider(color = AppColors.Border, thickness = 1.dp)
+                        }
+                    }
+                }
+                
+                // Overlay de loading (F5 refresh)
+                if (isRefreshing) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(AppColors.Background.copy(alpha = 0.6f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = AppColors.Primary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Text(
+                                text = "Atualizando...",
+                                color = AppColors.TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }
@@ -152,87 +270,154 @@ private fun Toolbar(
     onToggleConcluidos: () -> Unit,
     updateAvailable: VersionInfo? = null,
     onUpdateClick: () -> Unit = {},
-    isCompact: Boolean = false
+    isCompact: Boolean = false,
+    searchQuery: String = "",
+    onSearchChange: (String) -> Unit = {},
+    onClearSearch: () -> Unit = {},
+    buscaAtiva: Boolean = false,
+    hasDateFilter: Boolean = false,
+    onDateFilterClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(AppColors.SurfaceVariant)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Lado esquerdo: contadores
+        // Contadores
         Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Em fila
-            StatusBadge(
-                label = "Em fila",
-                count = emFila,
-                color = AppColors.BadgeBlue
+            StatusBadge(label = "Em fila", count = emFila, color = AppColors.BadgeBlue)
+            if (erros > 0) {
+                StatusBadge(label = "Erros", count = erros, color = AppColors.BadgeRed)
+            }
+            if (cancelados > 0) {
+                StatusBadge(label = "Cancelados", count = cancelados, color = AppColors.BadgeOrange)
+            }
+        }
+        
+        Spacer(Modifier.width(10.dp))
+
+        // Input de busca
+        Row(
+            modifier = Modifier
+                .widthIn(max = 200.dp)
+                .height(32.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(AppColors.Surface)
+                .border(1.dp, AppColors.Border, RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = "Pesquisar",
+                tint = AppColors.TextMuted,
+                modifier = Modifier.size(14.dp)
             )
             
-            // Erros (se houver)
-            if (erros > 0) {
-                StatusBadge(
-                    label = "Erros",
-                    count = erros,
-                    color = AppColors.BadgeRed
-                )
-            }
+            androidx.compose.foundation.text.BasicTextField(
+                value = searchQuery,
+                onValueChange = onSearchChange,
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    color = AppColors.TextPrimary,
+                    fontSize = 12.sp
+                ),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(AppColors.Primary),
+                modifier = Modifier.weight(1f),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (searchQuery.isEmpty()) {
+                            Text("Pesquisar...", color = AppColors.TextMuted, fontSize = 12.sp)
+                        }
+                        innerTextField()
+                    }
+                }
+            )
             
-            // Cancelados (se houver)
-            if (cancelados > 0) {
-                StatusBadge(
-                    label = "Cancelados",
-                    count = cancelados,
-                    color = AppColors.BadgeOrange
+            if (buscaAtiva) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Limpar",
+                    tint = AppColors.TextMuted,
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clickable { onClearSearch() }
+                        .pointerHoverIcon(PointerIcon.Hand)
                 )
             }
         }
         
-        // Lado direito: botão de update (se disponível) e toggle concluídos
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Spacer(Modifier.width(4.dp))
+        
+        // Botão filtro de data
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (hasDateFilter) AppColors.Primary.copy(alpha = 0.15f) else AppColors.Surface)
+                .border(
+                    1.dp,
+                    if (hasDateFilter) AppColors.Primary.copy(alpha = 0.5f) else AppColors.Border,
+                    RoundedCornerShape(6.dp)
+                )
+                .clickable { onDateFilterClick() }
+                .pointerHoverIcon(PointerIcon.Hand),
+            contentAlignment = Alignment.Center
         ) {
-            // Botão de atualização (se há update disponível e usuário fechou o dialog)
-            if (updateAvailable != null) {
-                UpdateButton(onClick = onUpdateClick)
-            }
-            
-            // Toggle concluídos
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(if (mostrarConcluidos) AppColors.BadgeGreenBg else AppColors.BadgeGrayBg)
-                    .border(
-                        1.dp,
-                        if (mostrarConcluidos) AppColors.BadgeGreen.copy(alpha = 0.5f) else AppColors.Border,
-                        RoundedCornerShape(4.dp)
-                    )
-                    .clickable { onToggleConcluidos() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (mostrarConcluidos) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = "Ativo",
-                        tint = AppColors.BadgeGreen,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-                Text(
-                    text = "Concluídos ($concluidos)",
-                    color = if (mostrarConcluidos) AppColors.BadgeGreen else AppColors.TextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = if (mostrarConcluidos) FontWeight.Medium else FontWeight.Normal
+            Icon(
+                imageVector = Icons.Filled.DateRange,
+                contentDescription = "Filtrar por data",
+                tint = if (hasDateFilter) AppColors.Primary else AppColors.TextSecondary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        // Spacer empurra concluídos para a direita
+        Spacer(Modifier.weight(1f))
+
+        // Update button (se disponível)
+        if (updateAvailable != null) {
+            UpdateButton(onClick = onUpdateClick)
+            Spacer(Modifier.width(8.dp))
+        }
+        
+        // Toggle concluídos (alinhado à direita)
+        Row(
+            modifier = Modifier
+                .height(32.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (mostrarConcluidos) AppColors.BadgeGreenBg else AppColors.BadgeGrayBg)
+                .border(
+                    1.dp,
+                    if (mostrarConcluidos) AppColors.BadgeGreen.copy(alpha = 0.5f) else AppColors.Border,
+                    RoundedCornerShape(6.dp)
+                )
+                .clickable { onToggleConcluidos() }
+                .pointerHoverIcon(PointerIcon.Hand)
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (mostrarConcluidos) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Ativo",
+                    tint = AppColors.BadgeGreen,
+                    modifier = Modifier.size(13.dp)
                 )
             }
+            Text(
+                text = "Concluídos ($concluidos)",
+                color = if (mostrarConcluidos) AppColors.BadgeGreen else AppColors.TextSecondary,
+                fontSize = 12.sp,
+                fontWeight = if (mostrarConcluidos) FontWeight.Medium else FontWeight.Normal
+            )
         }
     }
 }
@@ -356,6 +541,7 @@ private fun AcoesCell(
     onMenuDismiss: () -> Unit = {}
 ) {
     var showDropdown by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     val status = desenho.statusEnum
     val podeRetry = status == DesenhoStatus.ERRO || status == DesenhoStatus.CANCELADO || status == DesenhoStatus.CONCLUIDO_COM_ERROS
     val podeCancelar = status == DesenhoStatus.PENDENTE || status == DesenhoStatus.PROCESSANDO
@@ -363,6 +549,48 @@ private fun AcoesCell(
     // Sincroniza com menu externo (botão direito)
     LaunchedEffect(showMenuExternal) {
         if (showMenuExternal) showDropdown = true
+    }
+    
+    // Dialog de confirmação para deletar
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = {
+                Text(
+                    text = "Deletar desenho?",
+                    color = AppColors.TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Tem certeza que deseja deletar \"${desenho.nomeArquivo}\"?\nEsta ação não pode ser desfeita.",
+                    color = AppColors.TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        actions.onDelete(desenho)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = AppColors.BadgeRed
+                    )
+                ) {
+                    Text("Deletar", color = AppColors.TextPrimary)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showDeleteConfirm = false }
+                ) {
+                    Text("Cancelar", color = AppColors.TextSecondary)
+                }
+            },
+            backgroundColor = AppColors.Surface,
+            shape = RoundedCornerShape(12.dp)
+        )
     }
 
     Box(
@@ -503,6 +731,20 @@ private fun AcoesCell(
                     )
                 }
             }
+            
+            // Deletar (sempre disponível)
+            Divider(color = AppColors.Border, modifier = Modifier.padding(vertical = 4.dp))
+            MenuItemStyled(
+                icon = Icons.Filled.Delete,
+                label = "Deletar",
+                isAction = true,
+                isDestructive = true,
+                onClick = {
+                    showDropdown = false
+                    onMenuDismiss()
+                    showDeleteConfirm = true
+                }
+            )
         }
     }
 }
@@ -828,4 +1070,430 @@ private fun EmptyState() {
 private fun truncatePath(path: String, maxLength: Int = 28): String {
     if (path.length <= maxLength) return path
     return "...${path.takeLast(maxLength - 3)}"
+}
+
+/**
+ * Formata data yyyy-MM-dd para dd/MM/yyyy
+ */
+private fun formatDateBr(isoDate: String): String {
+    if (isoDate.length < 10) return isoDate
+    val parts = isoDate.take(10).split("-")
+    if (parts.size != 3) return isoDate
+    return "${parts[2]}/${parts[1]}/${parts[0]}"
+}
+
+
+private fun isLeapYear(year: Int): Boolean =
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+
+// ==================== Custom Date Range Picker (shadcn/ui style) ====================
+
+/**
+ * Data class representando ano/mês
+ */
+private data class YearMonth(val year: Int, val month: Int) {
+    fun next(): YearMonth = if (month == 12) YearMonth(year + 1, 1) else YearMonth(year, month + 1)
+    fun prev(): YearMonth = if (month == 1) YearMonth(year - 1, 12) else YearMonth(year, month - 1)
+    fun daysInMonth(): Int {
+        val leap = isLeapYear(year)
+        return when (month) {
+            1 -> 31; 2 -> if (leap) 29 else 28; 3 -> 31; 4 -> 30
+            5 -> 31; 6 -> 30; 7 -> 31; 8 -> 31; 9 -> 30; 10 -> 31; 11 -> 30; 12 -> 31
+            else -> 30
+        }
+    }
+    /** Dia da semana do primeiro dia (0=Dom, 1=Seg, ..., 6=Sab) */
+    fun firstDayOfWeek(): Int {
+        // Zeller/Tomohiko Sakamoto
+        val y0 = if (month <= 2) year - 1 else year
+        val m0 = if (month <= 2) month + 12 else month
+        val t = intArrayOf(0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4)
+        return (y0 + y0 / 4 - y0 / 100 + y0 / 400 + t[m0 - 3] + 1) % 7
+    }
+    fun toTriple(day: Int) = Triple(year, month, day)
+}
+
+private val MONTH_NAMES = arrayOf(
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+)
+
+private fun tripleToIso(t: Triple<Int, Int, Int>): String =
+    "%04d-%02d-%02d".format(t.first, t.second, t.third)
+
+private fun isoToTriple(iso: String): Triple<Int, Int, Int>? {
+    if (iso.length < 10) return null
+    val p = iso.take(10).split("-")
+    if (p.size != 3) return null
+    val y = p[0].toIntOrNull() ?: return null
+    val m = p[1].toIntOrNull() ?: return null
+    val d = p[2].toIntOrNull() ?: return null
+    return Triple(y, m, d)
+}
+
+private fun tripleCompare(a: Triple<Int, Int, Int>, b: Triple<Int, Int, Int>): Int {
+    if (a.first != b.first) return a.first - b.first
+    if (a.second != b.second) return a.second - b.second
+    return a.third - b.third
+}
+
+private fun isBetween(
+    day: Triple<Int, Int, Int>,
+    start: Triple<Int, Int, Int>,
+    end: Triple<Int, Int, Int>
+): Boolean = tripleCompare(day, start) >= 0 && tripleCompare(day, end) <= 0
+
+/**
+ * Date Range Picker Dialog - estilo shadcn/ui com 2 calendários lado a lado
+ */
+@Composable
+private fun DateRangePickerDialog(
+    currentDe: String,
+    currentAte: String,
+    onApply: (de: String, ate: String) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    // Parse initial values
+    val initStart = if (currentDe.isNotBlank()) isoToTriple(currentDe) else null
+    val initEnd = if (currentAte.isNotBlank()) isoToTriple(currentAte) else null
+
+    var rangeStart by remember { mutableStateOf(initStart) }
+    var rangeEnd by remember { mutableStateOf(initEnd) }
+    var hoveredDay by remember { mutableStateOf<Triple<Int, Int, Int>?>(null) }
+
+    // Determine initial left month
+    val today = getTodayDate() // yyyy-MM-dd
+    val todayTriple = isoToTriple(today) ?: Triple(2026, 1, 1)
+    val initYm = if (initStart != null) YearMonth(initStart.first, initStart.second)
+                 else YearMonth(todayTriple.first, todayTriple.second)
+    var leftMonth by remember { mutableStateOf(initYm) }
+    val rightMonth = leftMonth.next()
+
+    val hasSelection = rangeStart != null
+
+    fun onDayClick(day: Triple<Int, Int, Int>) {
+        if (rangeStart == null || rangeEnd != null) {
+            // Start new selection
+            rangeStart = day
+            rangeEnd = null
+        } else {
+            // Complete selection
+            if (tripleCompare(day, rangeStart!!) < 0) {
+                rangeEnd = rangeStart
+                rangeStart = day
+            } else {
+                rangeEnd = day
+            }
+        }
+    }
+
+    // Effective end for hover preview
+    val effectiveEnd: Triple<Int, Int, Int>? = rangeEnd ?: if (rangeStart != null && hoveredDay != null) {
+        if (tripleCompare(hoveredDay!!, rangeStart!!) >= 0) hoveredDay else null
+    } else null
+
+    val effectiveStart: Triple<Int, Int, Int>? = if (rangeEnd == null && rangeStart != null && hoveredDay != null && tripleCompare(hoveredDay!!, rangeStart!!) < 0) {
+        hoveredDay
+    } else rangeStart
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .width(580.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(AppColors.Surface)
+                .border(1.dp, AppColors.Border, RoundedCornerShape(12.dp))
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Selecionar período",
+                        color = AppColors.TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    val startText = rangeStart?.let { formatDateBr(tripleToIso(it)) } ?: "—"
+                    val endText = rangeEnd?.let { formatDateBr(tripleToIso(it)) } ?: "—"
+                    Text(
+                        text = "$startText  →  $endText",
+                        color = if (hasSelection) AppColors.Primary else AppColors.TextMuted,
+                        fontSize = 12.sp
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Fechar",
+                    tint = AppColors.TextMuted,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { onDismiss() }
+                        .pointerHoverIcon(PointerIcon.Hand)
+                )
+            }
+
+            Divider(color = AppColors.Border)
+
+            // Calendars row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CalendarMonth(
+                    yearMonth = leftMonth,
+                    rangeStart = effectiveStart,
+                    rangeEnd = effectiveEnd,
+                    hoveredDay = hoveredDay,
+                    onDayClick = ::onDayClick,
+                    onDayHover = { hoveredDay = it },
+                    onPrevMonth = { leftMonth = leftMonth.prev() },
+                    onNextMonth = null, // nav only on edges
+                    modifier = Modifier.weight(1f)
+                )
+                // Separador vertical
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(260.dp)
+                        .background(AppColors.Border)
+                )
+                CalendarMonth(
+                    yearMonth = rightMonth,
+                    rangeStart = effectiveStart,
+                    rangeEnd = effectiveEnd,
+                    hoveredDay = hoveredDay,
+                    onDayClick = ::onDayClick,
+                    onDayHover = { hoveredDay = it },
+                    onPrevMonth = null,
+                    onNextMonth = { leftMonth = leftMonth.next() },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Divider(color = AppColors.Border)
+
+            // Footer
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (currentDe.isNotBlank() || currentAte.isNotBlank()) {
+                    Text(
+                        text = "Limpar",
+                        color = AppColors.BadgeRed,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { onClear() }
+                            .pointerHoverIcon(PointerIcon.Hand)
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "Cancelar",
+                    color = AppColors.TextSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .border(1.dp, AppColors.Border, RoundedCornerShape(6.dp))
+                        .clickable { onDismiss() }
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                )
+                Text(
+                    text = "Aplicar",
+                    color = if (rangeStart != null && rangeEnd != null) AppColors.TextPrimary else AppColors.TextMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (rangeStart != null && rangeEnd != null) AppColors.Primary
+                            else AppColors.Primary.copy(alpha = 0.3f)
+                        )
+                        .clickable(enabled = rangeStart != null && rangeEnd != null) {
+                            val de = rangeStart?.let { tripleToIso(it) } ?: ""
+                            val ate = rangeEnd?.let { tripleToIso(it) } ?: ""
+                            onApply(de, ate)
+                        }
+                        .pointerHoverIcon(
+                            if (rangeStart != null && rangeEnd != null) PointerIcon.Hand
+                            else PointerIcon.Default
+                        )
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Mês de calendário individual estilo shadcn/ui
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun CalendarMonth(
+    yearMonth: YearMonth,
+    rangeStart: Triple<Int, Int, Int>?,
+    rangeEnd: Triple<Int, Int, Int>?,
+    hoveredDay: Triple<Int, Int, Int>?,
+    onDayClick: (Triple<Int, Int, Int>) -> Unit,
+    onDayHover: (Triple<Int, Int, Int>?) -> Unit,
+    onPrevMonth: (() -> Unit)?,
+    onNextMonth: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    val daysInMonth = yearMonth.daysInMonth()
+    val firstDow = yearMonth.firstDayOfWeek() // 0=Dom
+    val weekDays = listOf("Do", "Se", "Te", "Qu", "Qi", "Se", "Sa")
+
+    Column(modifier = modifier) {
+        // Month/Year header with nav
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Prev arrow
+            if (onPrevMonth != null) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowLeft,
+                    contentDescription = "Mês anterior",
+                    tint = AppColors.TextSecondary,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { onPrevMonth() }
+                        .pointerHoverIcon(PointerIcon.Hand)
+                )
+            } else {
+                Spacer(Modifier.size(24.dp))
+            }
+
+            Text(
+                text = "${MONTH_NAMES[yearMonth.month - 1]} ${yearMonth.year}",
+                color = AppColors.TextPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+
+            if (onNextMonth != null) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowRight,
+                    contentDescription = "Próximo mês",
+                    tint = AppColors.TextSecondary,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { onNextMonth() }
+                        .pointerHoverIcon(PointerIcon.Hand)
+                )
+            } else {
+                Spacer(Modifier.size(24.dp))
+            }
+        }
+
+        // Week day headers
+        Row(modifier = Modifier.fillMaxWidth()) {
+            weekDays.forEach { d ->
+                Box(
+                    modifier = Modifier.weight(1f).height(28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = d,
+                        color = AppColors.TextMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        // Day grid (6 rows max)
+        var dayCounter = 1
+        for (week in 0..5) {
+            if (dayCounter > daysInMonth) break
+            Row(modifier = Modifier.fillMaxWidth()) {
+                for (dow in 0..6) {
+                    val cellIndex = week * 7 + dow
+                    if (cellIndex < firstDow || dayCounter > daysInMonth) {
+                        // Empty cell
+                        Box(modifier = Modifier.weight(1f).height(32.dp))
+                    } else {
+                        val day = dayCounter
+                        val triple = yearMonth.toTriple(day)
+                        val isStart = rangeStart != null && tripleCompare(triple, rangeStart) == 0
+                        val isEnd = rangeEnd != null && tripleCompare(triple, rangeEnd) == 0
+                        val inRange = rangeStart != null && rangeEnd != null &&
+                                isBetween(triple, rangeStart, rangeEnd)
+                        val isHovered = hoveredDay != null && tripleCompare(triple, hoveredDay) == 0
+
+                        val bgColor = when {
+                            isStart || isEnd -> AppColors.Primary
+                            inRange -> AppColors.Primary.copy(alpha = 0.15f)
+                            isHovered -> AppColors.SurfaceVariant
+                            else -> androidx.compose.ui.graphics.Color.Transparent
+                        }
+                        val textColor = when {
+                            isStart || isEnd -> androidx.compose.ui.graphics.Color.White
+                            inRange -> AppColors.TextPrimary
+                            else -> AppColors.TextPrimary
+                        }
+                        val shape = when {
+                            isStart && isEnd -> RoundedCornerShape(6.dp)
+                            isStart -> RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp)
+                            isEnd -> RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)
+                            inRange -> RoundedCornerShape(0.dp)
+                            else -> RoundedCornerShape(6.dp)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp)
+                                .clip(shape)
+                                .background(bgColor)
+                                .clickable { onDayClick(triple) }
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .pointerInput(triple) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            when (event.type) {
+                                                PointerEventType.Enter -> onDayHover(triple)
+                                                PointerEventType.Exit -> onDayHover(null)
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = day.toString(),
+                                color = textColor,
+                                fontSize = 12.sp,
+                                fontWeight = if (isStart || isEnd) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                        dayCounter++
+                    }
+                }
+            }
+        }
+    }
 }

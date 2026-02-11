@@ -34,6 +34,15 @@ class DesenhoDao(private val database: Database) {
         }
     }
 
+    fun delete(id: String) {
+        database.connection().use { conn ->
+            conn.prepareStatement("DELETE FROM desenho WHERE id = ?").use { stmt ->
+                stmt.setString(1, id)
+                stmt.executeUpdate()
+            }
+        }
+    }
+
     fun deleteAll() {
         database.connection().use { conn ->
             conn.createStatement().executeUpdate("DELETE FROM desenho")

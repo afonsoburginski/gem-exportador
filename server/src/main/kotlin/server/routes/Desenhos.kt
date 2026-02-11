@@ -300,6 +300,16 @@ fun Route.apiDesenhos(desenhoDao: DesenhoDao, queue: ProcessingQueue, broadcast:
         call.respond(SuccessResponse(sucesso = true, mensagem = "Desenho na fila para reprocessamento", id = id, status = "pendente", posicaoFila = pos, formatosRestantes = restantes))
     }
 
+    // DELETE /api/desenhos/{id} - deleta um desenho
+    delete("/api/desenhos/{id}") {
+        val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+        desenhoDao.getById(id) ?: return@delete call.respond(HttpStatusCode.NotFound, ErrorResponse(erro = "Desenho não encontrado"))
+        queue.remove(id)
+        desenhoDao.delete(id)
+        broadcast.sendDelete(id)
+        call.respond(SuccessResponse(sucesso = true, mensagem = "Desenho deletado", id = id))
+    }
+
     // GET /api/desenhos/{id}/download/{tipo}
     get("/api/desenhos/{id}/download/{tipo}") {
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
