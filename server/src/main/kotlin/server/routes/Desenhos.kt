@@ -13,6 +13,7 @@ import model.DesenhoAutodesk
 import server.broadcast.Broadcast
 import server.db.DesenhoDao
 import server.queue.ProcessingQueue
+import server.util.AppLog
 import java.io.File
 import java.util.UUID
 
@@ -283,14 +284,23 @@ fun Route.apiDesenhos(desenhoDao: DesenhoDao, queue: ProcessingQueue, broadcast:
     // POST /api/desenhos/{id}/retry
     post("/api/desenhos/{id}/retry") {
         val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-        val d = desenhoDao.getById(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+        AppLog.info("[RETRY] Recebido retry para desenho $id")
+        val d = desenhoDao.getById(id)
+        if (d == null) {
+            AppLog.warn("[RETRY] Desenho $id não encontrado")
+            call.respond(HttpStatusCode.NotFound)
+            return@post
+        }
+        AppLog.info("[RETRY] ${d.nomeArquivo} status=${d.status} solicitados=${d.formatosSolicitados} processados=${d.arquivosProcessados.map { it.tipo }}")
         val solicitados = d.formatosSolicitados.ifEmpty { listOf("pdf") }
         val jaGerados = d.arquivosProcessados.map { it.tipo.lowercase() }.toSet()
         val restantes = solicitados.map { it.lowercase() }.filter { !jaGerados.contains(it) }
         if (restantes.isEmpty()) {
+            AppLog.warn("[RETRY] Nada a reprocessar para ${d.nomeArquivo}: solicitados=$solicitados jaGerados=$jaGerados")
             call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Nada a reprocessar: todos os formatos já gerados"))
             return@post
         }
+        AppLog.info("[RETRY] Reprocessando ${d.nomeArquivo}: formatos restantes=$restantes")
         val pos = desenhoDao.countPendentesEProcessando() + 1
         val now = java.time.Instant.now().toString()
         desenhoDao.update(id, status = "pendente", horarioAtualizacao = now, progresso = 0, erro = null, canceladoEm = null, posicaoFila = pos)

@@ -41,18 +41,34 @@ class ApiClient(private val baseUrl: String) {
     }
 
     suspend fun retry(desenhoId: String): Result<Unit> = runCatching {
-        client.post("$baseUrl/api/desenhos/$desenhoId/retry") {
+        val response = client.post("$baseUrl/api/desenhos/$desenhoId/retry") {
             contentType(ContentType.Application.Json)
         }
-    }.map { }
+        if (!response.status.isSuccess()) {
+            val erro = response.bodyAsText()
+            logToFile("ERROR", "Retry rejeitado pelo servidor (${response.status}): $erro")
+            throw Exception("Erro ${response.status}: $erro")
+        }
+        logToFile("INFO", "Retry aceito pelo servidor para $desenhoId")
+    }
 
     suspend fun cancelar(desenhoId: String): Result<Unit> = runCatching {
-        client.post("$baseUrl/api/desenhos/$desenhoId/cancelar") {
+        val response = client.post("$baseUrl/api/desenhos/$desenhoId/cancelar") {
             contentType(ContentType.Application.Json)
         }
-    }.map { }
+        if (!response.status.isSuccess()) {
+            val erro = response.bodyAsText()
+            logToFile("ERROR", "Cancelar rejeitado pelo servidor (${response.status}): $erro")
+            throw Exception("Erro ${response.status}: $erro")
+        }
+    }
 
     suspend fun delete(desenhoId: String): Result<Unit> = runCatching {
-        client.delete("$baseUrl/api/desenhos/$desenhoId")
-    }.map { }
+        val response = client.delete("$baseUrl/api/desenhos/$desenhoId")
+        if (!response.status.isSuccess()) {
+            val erro = response.bodyAsText()
+            logToFile("ERROR", "Delete rejeitado pelo servidor (${response.status}): $erro")
+            throw Exception("Erro ${response.status}: $erro")
+        }
+    }
 }

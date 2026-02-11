@@ -139,31 +139,42 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
         DesenhoActions(
             onRetry = { desenho ->
                 logToFile("INFO", "Reenviar solicitado: ${desenho.nomeArquivo} (${desenho.id})")
-                // UI OTIMISTA: atualiza local para processando para feedback visual azul imediato
                 repository.updateStatus(desenho.id, "processando", getCurrentDateTime())
                 scope.launch(Dispatchers.Default) {
                     if (apiClient != null) {
-                        apiClient.retry(desenho.id) // servidor processa e WebSocket sincroniza
+                        val result = apiClient.retry(desenho.id)
+                        if (result.isFailure) {
+                            logToFile("ERROR", "Falha ao reenviar ${desenho.nomeArquivo}: ${result.exceptionOrNull()?.message}")
+                            repository.updateStatus(desenho.id, desenho.status, getCurrentDateTime())
+                        } else {
+                            logToFile("INFO", "Reenviar aceito pelo servidor: ${desenho.nomeArquivo}")
+                        }
+                    } else {
+                        logToFile("ERROR", "ApiClient nulo - servidor não configurado")
                     }
                 }
             },
             onCancel = { desenho ->
                 logToFile("INFO", "Cancelar solicitado: ${desenho.nomeArquivo} (${desenho.id})")
-                // UI OTIMISTA: atualiza local imediatamente
                 repository.updateStatus(desenho.id, "cancelado", getCurrentDateTime())
                 scope.launch(Dispatchers.Default) {
                     if (apiClient != null) {
-                        apiClient.cancelar(desenho.id)
+                        val result = apiClient.cancelar(desenho.id)
+                        if (result.isFailure) {
+                            logToFile("ERROR", "Falha ao cancelar ${desenho.nomeArquivo}: ${result.exceptionOrNull()?.message}")
+                        }
                     }
                 }
             },
             onDelete = { desenho ->
                 logToFile("INFO", "Deletar solicitado: ${desenho.nomeArquivo} (${desenho.id})")
-                // UI OTIMISTA: deleta local imediatamente
                 repository.delete(desenho.id)
                 scope.launch(Dispatchers.Default) {
                     if (apiClient != null) {
-                        apiClient.delete(desenho.id)
+                        val result = apiClient.delete(desenho.id)
+                        if (result.isFailure) {
+                            logToFile("ERROR", "Falha ao deletar ${desenho.nomeArquivo}: ${result.exceptionOrNull()?.message}")
+                        }
                     }
                 }
             }
