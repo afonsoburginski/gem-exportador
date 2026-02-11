@@ -103,6 +103,16 @@ Trigger `notify_desenho_changes()` dispara `pg_notify('desenho_changes', ...)` e
 | `\\192.168.1.152\Arquivos$\DESENHOS GERENCIADOR 3D\{num}\` | Arquivos fonte (.idw, .iam, .ipt) |
 | `\\192.168.1.152\Arquivos$\DESENHOS GERENCIADOR\{num}\` | Arquivos exportados (.pdf, .dwf, .dwg) |
 
+## Progresso procedural
+- 0% — Na fila
+- 5% — VBScript iniciando
+- 10% — VBScript rodando
+- 20% — Inventor abrindo documento (estimado por tempo)
+- 35% — SaveCopyAs iniciado (estimado)
+- 40-88% — Aguardando arquivo no disco (incremento gradual com curva logarítmica)
+- 92% — Arquivo encontrado na pasta de destino
+- 100% — Concluído
+
 ## Desktop App
 
 - **Kotlin Multiplatform** + **Compose Desktop**

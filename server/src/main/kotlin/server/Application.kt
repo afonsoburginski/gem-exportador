@@ -153,12 +153,17 @@ private fun startPostgresListener(
                                         when (op) {
                                             "INSERT" -> {
                                                 broadcast.sendInsert(desenho)
+                                                // Só adiciona à fila via NOTIFY para INSERTs novos
+                                                // (evita duplicação — a rota que inseriu já chama queue.add)
+                                                // queue.add tem dedup interno, mas melhor evitar chamadas desnecessárias
                                                 if (desenho.status == "pendente") {
                                                     queue.add(desenho.id)
                                                     AppLog.info("[REALTIME] -> Adicionado à fila de processamento")
                                                 }
                                             }
                                             "UPDATE" -> {
+                                                // Apenas broadcast — NÃO re-adiciona à fila
+                                                // Quem controla a fila é ProcessingQueue e as rotas (retry, etc.)
                                                 broadcast.sendUpdate(desenho)
                                             }
                                         }

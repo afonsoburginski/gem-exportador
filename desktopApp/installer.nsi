@@ -249,33 +249,50 @@ Section "Install"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" \
     "NoRepair" 1
   WriteRegStr HKLM "Software\${APP_NAME}" "InstallDir" "$INSTDIR"
+  WriteRegStr HKLM "Software\${APP_NAME}" "GemMode" "$GemMode"
 SectionEnd
 
 ; --- Secao de desinstalacao ---
 Section "Uninstall"
-  ; Para o servico PostgreSQL
-  nsExec::ExecToLog 'net stop GemPostgreSQL'
-  nsExec::ExecToLog '"C:\gem-exportador\pgsql\bin\pg_ctl.exe" unregister -N GemPostgreSQL'
+  ; Verifica o modo de instalacao (server ou viewer)
+  ReadRegStr $0 HKLM "Software\${APP_NAME}" "GemMode"
+
+  ; Somente servidor: para o servico PostgreSQL
+  StrCmp $0 "viewer" skip_pg_stop
+    nsExec::ExecToLog 'net stop GemPostgreSQL'
+    nsExec::ExecToLog '"C:\gem-exportador\pgsql\bin\pg_ctl.exe" unregister -N GemPostgreSQL'
+  skip_pg_stop:
 
   ; Remove arquivos do app
   RMDir /r "$INSTDIR\app"
   RMDir /r "$INSTDIR\runtime"
+  RMDir /r "$INSTDIR\scripts"
   Delete "$INSTDIR\${APP_NAME}.ico"
   Delete "$INSTDIR\launch.cmd"
   Delete "$INSTDIR\setup-postgres.cmd"
   Delete "$INSTDIR\.env"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
-  
-  ; Pergunta se deseja remover dados
-  MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover TODOS os dados (banco de dados, logs, PostgreSQL)?" IDYES removedata IDNO skipdata
-  removedata:
-    RMDir /r "C:\gem-exportador"
-  skipdata:
 
-  ; Remove ODBC DSN
-  nsExec::ExecToLog 'powershell -Command "Remove-OdbcDsn -Name gem_exportador -DsnType System -Platform 32-bit -ErrorAction SilentlyContinue"'
-  nsExec::ExecToLog 'powershell -Command "Remove-OdbcDsn -Name gem_exportador -DsnType System -Platform 64-bit -ErrorAction SilentlyContinue"'
+  ; Somente servidor: pergunta se deseja remover dados (banco, logs, PostgreSQL)
+  ; Viewer NUNCA deve ter esta opcao — é instalado em muitas maquinas de usuarios
+  StrCmp $0 "viewer" skip_removedata
+    MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover TODOS os dados (banco de dados, logs, PostgreSQL)?" IDYES removedata IDNO skip_removedata
+    removedata:
+      RMDir /r "C:\gem-exportador"
+  skip_removedata:
+
+  ; Viewer: remove apenas logs locais (nao banco, nao PostgreSQL)
+  StrCmp $0 "viewer" 0 skip_viewer_logs
+    RMDir /r "C:\gem-exportador\logs"
+    RMDir "C:\gem-exportador"
+  skip_viewer_logs:
+
+  ; Somente servidor: remove ODBC DSN
+  StrCmp $0 "viewer" skip_odbc
+    nsExec::ExecToLog 'powershell -Command "Remove-OdbcDsn -Name gem_exportador -DsnType System -Platform 32-bit -ErrorAction SilentlyContinue"'
+    nsExec::ExecToLog 'powershell -Command "Remove-OdbcDsn -Name gem_exportador -DsnType System -Platform 64-bit -ErrorAction SilentlyContinue"'
+  skip_odbc:
 
   ; Remove shortcuts
   Delete "$DESKTOP\${APP_NAME}.lnk"

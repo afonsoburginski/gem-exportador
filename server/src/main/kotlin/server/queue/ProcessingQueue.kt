@@ -84,13 +84,19 @@ class ProcessingQueue(
             ?: desenho.formatosSolicitados.ifEmpty { listOf("pdf") }
         val pos = desenhoDao.countPendentesEProcessando()
         mutex.withLock {
+            // Ignora se este desenho já está sendo processado agora
+            if (currentItem?.desenhoId == desenhoId) {
+                AppLog.info("[QUEUE] Ignorando add para ${desenho.nomeArquivo}: já está em processamento ativo")
+                return
+            }
             formatos.forEach { f ->
                 if (!queue.any { it.desenhoId == desenhoId && it.formato == f })
                     queue.add(Item(desenhoId, f, desenho.posicaoFila ?: pos))
             }
             queue.sortWith(compareBy({ it.posicaoFila }, { it.desenhoId }, { it.formato }))
         }
-        // Não precisa chamar processLoop() - já roda no init via CoroutineScope
+        // Limpa progresso antigo ao adicionar (reenviar)
+        progressoPorFormato.keys.filter { it.startsWith("$desenhoId:") }.forEach { progressoPorFormato.remove(it) }
     }
 
     fun remove(desenhoId: String): Boolean {
@@ -143,6 +149,17 @@ class ProcessingQueue(
             if (desenho == null || desenho.status == "cancelado") {
                 currentItem = null
                 continue
+            }
+
+            // ===== GUARD: Garante que só UM desenho tenha status "processando" =====
+            // Reseta qualquer outro desenho que ficou preso em "processando" 
+            // (ex: crash anterior, race condition)
+            val outrosProcessando = desenhoDao.list(status = "processando", limit = 100, offset = 0)
+                .filter { it.id != item.desenhoId }
+            for (outro in outrosProcessando) {
+                AppLog.warn("[QUEUE-GUARD] Resetando desenho ${outro.nomeArquivo} (${outro.id}) de 'processando' para 'pendente' — só 1 desenho por vez!")
+                desenhoDao.update(outro.id, status = "pendente")
+                broadcast.sendUpdate(desenhoDao.getById(outro.id)!!)
             }
 
             // Inicializa progresso dos formatos para este desenho
