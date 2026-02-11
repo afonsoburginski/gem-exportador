@@ -25,6 +25,16 @@ object DesktopConfig {
         }
     }
 
+    /**
+     * Modo de execução:
+     * - "server" (padrão): inicia servidor embutido + frontend (app completo)
+     * - "viewer": só frontend, conecta em servidor remoto
+     */
+    val mode: String get() = get("GEM_MODE", "server").lowercase()
+
+    /** True se estiver rodando como viewer (sem servidor local) */
+    val isViewer: Boolean get() = mode == "viewer"
+
     val serverUrl: String? get() {
         val url = get("SERVER_URL", "http://localhost:8080")
         return url.ifBlank { null }

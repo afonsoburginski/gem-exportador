@@ -23,7 +23,15 @@ class ProcessingQueue(
     private val broadcast: Broadcast
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    data class Item(val desenhoId: String, val formato: String, val posicaoFila: Int)
+    data class Item(val desenhoId: String, val formato: String, val posicaoFila: Int, val tentativa: Int = 1)
+
+    companion object {
+        /** Máximo de tentativas automáticas por formato */
+        const val MAX_TENTATIVAS = 3
+        /** Delay (ms) entre tentativas para o Inventor se recuperar */
+        const val DELAY_RETRY_MS = 15_000L // 15 segundos
+    }
+
     private val queue = mutableListOf<Item>()
     private val mutex = Mutex()
     private var processing = false
@@ -68,10 +76,10 @@ class ProcessingQueue(
             mapOf<String, Any?>(
                 "tamanho" to queue.size,
                 "processando" to processing,
-                "processoAtual" to currentItem?.let { "${it.desenhoId} (${it.formato})" },
-                "processoAtualDetalhe" to currentItem?.let { mapOf("desenhoId" to it.desenhoId, "formato" to it.formato) },
-                "proximos" to queue.take(10).map { "pos${it.posicaoFila} ${it.desenhoId}:${it.formato}" },
-                "proximosItens" to queue.take(50).map { mapOf("desenhoId" to it.desenhoId, "formato" to it.formato, "posicaoFila" to it.posicaoFila) }
+                "processoAtual" to currentItem?.let { "${it.desenhoId} (${it.formato}) tentativa ${it.tentativa}" },
+                "processoAtualDetalhe" to currentItem?.let { mapOf("desenhoId" to it.desenhoId, "formato" to it.formato, "tentativa" to it.tentativa) },
+                "proximos" to queue.take(10).map { "pos${it.posicaoFila} ${it.desenhoId}:${it.formato} t${it.tentativa}" },
+                "proximosItens" to queue.take(50).map { mapOf("desenhoId" to it.desenhoId, "formato" to it.formato, "posicaoFila" to it.posicaoFila, "tentativa" to it.tentativa) }
             )
         }
     }
@@ -103,7 +111,8 @@ class ProcessingQueue(
 
             desenhoDao.update(item.desenhoId, status = "processando")
             broadcast.sendUpdate(desenhoDao.getById(item.desenhoId)!!)
-            AppLog.info("Processando desenho ${item.desenhoId} formato ${item.formato} (entrada: ${desenho.nomeArquivo})")
+            val tentativaInfo = if (item.tentativa > 1) " [tentativa ${item.tentativa}/$MAX_TENTATIVAS]" else ""
+            AppLog.info("Processando desenho ${item.desenhoId} formato ${item.formato}$tentativaInfo (entrada: ${desenho.nomeArquivo})")
 
             val arquivoEntrada = InventorRunner.resolverArquivoEntrada(
                 desenho.arquivoOriginal,
@@ -152,10 +161,29 @@ class ProcessingQueue(
                 errosAnteriores.removeAll { it.startsWith("${item.formato}:") }
             } else {
                 val errMsg = result.errorMessage ?: "Erro no processamento"
-                AppLog.error("Erro ao processar ${item.desenhoId} formato ${item.formato}: $errMsg")
-                // Registra erro deste formato específico
+                AppLog.error("Erro ao processar ${item.desenhoId} formato ${item.formato} (tentativa ${item.tentativa}/${MAX_TENTATIVAS}): $errMsg")
+
+                // Auto-retry: re-adicionar à fila se não esgotou tentativas
+                if (item.tentativa < MAX_TENTATIVAS) {
+                    val proxTentativa = item.tentativa + 1
+                    AppLog.info("[AUTO-RETRY] Reagendando ${desenho.nomeArquivo} formato ${item.formato} -> tentativa $proxTentativa/$MAX_TENTATIVAS (aguardando ${DELAY_RETRY_MS / 1000}s)")
+                    // Delay para o Inventor se recuperar
+                    delay(DELAY_RETRY_MS)
+                    mutex.withLock {
+                        queue.add(Item(item.desenhoId, item.formato, item.posicaoFila, proxTentativa))
+                    }
+                    // Não registra erro ainda — só quando esgotar tentativas
+                    // Atualiza status para processando e continua
+                    desenhoDao.update(item.desenhoId, status = "processando")
+                    broadcast.sendUpdate(desenhoDao.getById(item.desenhoId)!!)
+                    currentItem = null
+                    continue
+                }
+
+                // Esgotou tentativas — registra erro definitivo
+                AppLog.error("[AUTO-RETRY] ${desenho.nomeArquivo} formato ${item.formato} FALHOU após $MAX_TENTATIVAS tentativas")
                 errosAnteriores.removeAll { it.startsWith("${item.formato}:") }
-                errosAnteriores.add("${item.formato}: falhou")
+                errosAnteriores.add("${item.formato}: falhou após ${MAX_TENTATIVAS} tentativas")
             }
             
             // Calcula progresso: conta formatos concluídos com sucesso
@@ -170,6 +198,11 @@ class ProcessingQueue(
             }
             val todoProcessado = formatosPendentes.isEmpty()
             
+            // Se TODOS os formatos foram concluídos com sucesso, limpa erros antigos (retry resolveu)
+            if (concluidos >= totalFormatos && todoProcessado) {
+                errosAnteriores.clear()
+            }
+
             // Determina status final
             val novoStatus = when {
                 !todoProcessado -> "processando" // Ainda há formatos na fila

@@ -122,8 +122,7 @@ fun DesenhosTable(
         desenhosAtivos.forEach { d ->
             when (d.statusEnum) {
                 DesenhoStatus.PROCESSANDO, DesenhoStatus.PENDENTE -> fila.add(d)
-                DesenhoStatus.CONCLUIDO -> ok.add(d)
-                DesenhoStatus.CONCLUIDO_COM_ERROS -> problema.add(d)
+                DesenhoStatus.CONCLUIDO, DesenhoStatus.CONCLUIDO_COM_ERROS -> ok.add(d)
                 DesenhoStatus.ERRO, DesenhoStatus.CANCELADO -> problema.add(d)
             }
         }

@@ -113,18 +113,34 @@ Private Sub ProcessarComando(fso As Object, sArquivoEntrada As String, sArquivoS
     
     Dim oDoc As Document
     Dim bAbrimos As Boolean
+    Dim bJaAberto As Boolean
     bAbrimos = False
+    bJaAberto = False
     
     ThisApplication.SilentOperation = True
     
-    Set oDoc = ThisApplication.ActiveDocument
+    Dim oDocExistente As Document
+    On Error Resume Next
+    For Each oDocExistente In ThisApplication.Documents
+        If LCase(oDocExistente.FullFileName) = LCase(sArquivoEntrada) Then
+            Set oDoc = oDocExistente
+            bJaAberto = True
+            Exit For
+        End If
+    Next
+    Err.Clear
+    On Error GoTo ErrorHandler
     
     If oDoc Is Nothing Then
         Set oDoc = ThisApplication.Documents.Open(sArquivoEntrada, True)
         bAbrimos = True
-    ElseIf LCase(oDoc.FullFileName) <> LCase(sArquivoEntrada) Then
-        Set oDoc = ThisApplication.Documents.Open(sArquivoEntrada, True)
-        bAbrimos = True
+    End If
+    
+    If oDoc Is Nothing Then
+        If Len(sBaseControle) = 0 Then sBaseControle = LerPastaControle(fso)
+        Call EscreverErro(fso, "Falha ao abrir documento: " & sArquivoEntrada, sBaseControle)
+        ThisApplication.SilentOperation = False
+        Exit Sub
     End If
     
     DoEvents
@@ -141,18 +157,24 @@ Private Sub ProcessarComando(fso As Object, sArquivoEntrada As String, sArquivoS
             bSucesso = ExportarDWFInterno(oDoc, sArquivoSaida)
     End Select
     
-    If bAbrimos Then
-        On Error Resume Next
-        oDoc.Close True
-        Err.Clear
-        On Error GoTo ErrorHandler
+    ' Sempre fecha o documento após exportação para garantir estado limpo
+    ' na próxima execução (evita travamentos em retentativas)
+    On Error Resume Next
+    If Not oDoc Is Nothing Then
+        oDoc.Close True  ' True = SkipSave (não salva alterações)
     End If
+    Err.Clear
+    On Error GoTo ErrorHandler
     
     ThisApplication.SilentOperation = False
     
     If Len(sBaseControle) = 0 Then sBaseControle = LerPastaControle(fso)
     If bSucesso Then
-        Call EscreverSucesso(fso, sArquivoSaida, sBaseControle)
+        If fso.FileExists(sArquivoSaida) Then
+            Call EscreverSucesso(fso, sArquivoSaida, sBaseControle)
+        Else
+            Call EscreverErro(fso, "Exportacao " & sFormato & " retornou sucesso mas arquivo nao existe: " & sArquivoSaida, sBaseControle)
+        End If
     Else
         Call EscreverErro(fso, "Exportacao " & sFormato & " falhou - verifique se o formato e suportado", sBaseControle)
     End If
@@ -277,6 +299,11 @@ Private Function ExportarDWGInterno(oDoc As Document, sArquivoSaida As String) A
     oDataMedium.FileName = sTempFile
     
     Print #logNum, "SaveCopyAs com DrawingDoc + Options vazio -> temp local..."
+    ' DoEvents + atualizar documento antes de exportar (evita travamento)
+    DoEvents
+    oDrawingDoc.Update2 True
+    DoEvents
+    
     On Error Resume Next
     Call oTranslator.SaveCopyAs(oDrawingDoc, oContext, oOptions, oDataMedium)
     If Err.Number <> 0 Then
@@ -288,19 +315,19 @@ Private Function ExportarDWGInterno(oDoc As Document, sArquivoSaida As String) A
     On Error GoTo ErrorHandler
     
     DoEvents
-    Sleep 3000
+    Sleep 5000
     DoEvents
     
     If Not fso.FileExists(sTempFile) Then
         Print #logNum, "Aguardando arquivo temp..."
-        For iWait = 1 To 30
+        For iWait = 1 To 60
             DoEvents
             Sleep 1000
             If fso.FileExists(sTempFile) Then
-                Print #logNum, "Arquivo apareceu em " & (iWait + 3) & "s"
+                Print #logNum, "Arquivo apareceu em " & (iWait + 5) & "s"
                 Exit For
             End If
-            If iWait Mod 10 = 0 Then Print #logNum, "  " & (iWait + 3) & "s..."
+            If iWait Mod 10 = 0 Then Print #logNum, "  " & (iWait + 5) & "s..."
         Next iWait
     End If
     
@@ -342,15 +369,15 @@ Private Function ExportarDWGInterno(oDoc As Document, sArquivoSaida As String) A
     On Error GoTo ErrorHandler
     
     DoEvents
-    Sleep 3000
+    Sleep 5000
     DoEvents
     
     If Not fso.FileExists(sArquivoSaida) Then
-        For iWait = 1 To 30
+        For iWait = 1 To 60
             DoEvents
             Sleep 1000
             If fso.FileExists(sArquivoSaida) Then Exit For
-            If iWait Mod 10 = 0 Then Print #logNum, "  Rede " & (iWait + 3) & "s..."
+            If iWait Mod 10 = 0 Then Print #logNum, "  Rede " & (iWait + 5) & "s..."
         Next iWait
     End If
     

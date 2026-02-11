@@ -30,19 +30,25 @@ import com.sun.jna.ptr.IntByReference
 fun main() {
     // Força dark mode no Windows via propriedade do sistema
     System.setProperty("sun.java2d.noddraw", "true")
-    
-    // Inicia o servidor em background antes de abrir a janela
-    CoroutineScope(Dispatchers.IO).launch {
-        try {
-            println("[GEM] Iniciando servidor embutido...")
-            server.startEmbeddedServer()
-        } catch (e: Exception) {
-            println("[GEM] Erro ao iniciar servidor: ${e.message}")
+
+    val isViewer = config.DesktopConfig.isViewer
+    val windowTitle = if (isViewer) "Gem exportador (viewer)" else "Gem exportador"
+
+    if (isViewer) {
+        println("[GEM] Modo VIEWER — conectando ao servidor remoto: ${config.DesktopConfig.serverUrl}")
+    } else {
+        // Inicia o servidor em background antes de abrir a janela
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                println("[GEM] Iniciando servidor embutido...")
+                server.startEmbeddedServer()
+            } catch (e: Exception) {
+                println("[GEM] Erro ao iniciar servidor: ${e.message}")
+            }
         }
+        // Aguarda o servidor iniciar (PostgreSQL já está rodando como serviço)
+        Thread.sleep(2000)
     }
-    
-    // Aguarda o servidor iniciar (PostgreSQL já está rodando como serviço)
-    Thread.sleep(2000)
     
     // Inicia o app Compose
     application {
@@ -52,7 +58,7 @@ fun main() {
         )
         
         Window(
-            title = "Gem exportador",
+            title = windowTitle,
             icon = icon,
             state = windowState,
             onCloseRequest = ::exitApplication
@@ -61,7 +67,7 @@ fun main() {
             
             LaunchedEffect(Unit) {
                 delay(100)
-                applyDarkTitleBarByTitle("Gem exportador")
+                applyDarkTitleBarByTitle(windowTitle)
             }
             MainView()
         }

@@ -48,14 +48,17 @@ fun Application.configureRouting() {
     val broadcast = Broadcast()
     val queue = ProcessingQueue(desenhoDao, broadcast)
     
-    // Adiciona desenhos pendentes à fila automaticamente na inicialização
+    // Adiciona desenhos pendentes e processando à fila automaticamente na inicialização
+    // (processando = caiu no meio do processamento anterior, precisa retomar)
     kotlinx.coroutines.runBlocking {
         val pendentes = desenhoDao.list(status = "pendente", limit = 100, offset = 0)
-        if (pendentes.isNotEmpty()) {
-            AppLog.info("Adicionando ${pendentes.size} desenho(s) pendente(s) a fila...")
-            for (desenho in pendentes) {
+        val processando = desenhoDao.list(status = "processando", limit = 100, offset = 0)
+        val retomar = pendentes + processando
+        if (retomar.isNotEmpty()) {
+            AppLog.info("Adicionando ${retomar.size} desenho(s) a fila (${pendentes.size} pendente(s) + ${processando.size} processando)...")
+            for (desenho in retomar) {
                 queue.add(desenho.id)
-                AppLog.info("  -> ${desenho.nomeArquivo} adicionado a fila")
+                AppLog.info("  -> ${desenho.nomeArquivo} (${desenho.status}) adicionado a fila")
             }
         }
     }

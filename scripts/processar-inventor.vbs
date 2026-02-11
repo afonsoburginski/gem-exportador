@@ -79,9 +79,7 @@ Function ExportarViaComando(sEntrada, sSaida, sFormato, sBaseControle)
     sErro = sBaseControle & "\erro.txt"
     
     If Not fso.FolderExists(sBaseControle) Then fso.CreateFolder sBaseControle
-    ' Escrever pasta de controle para o macro saber onde procurar comando.txt
-    ' 1) %APPDATA%\JhonRob\ (nao exige admin)
-    ' 2) C:\ (tentativa extra; Inventor "como administrador" pode ler so C:\)
+
     On Error Resume Next
     Dim oShell, sAppData, sControlePath
     Set oShell = CreateObject("WScript.Shell")
@@ -104,11 +102,19 @@ Function ExportarViaComando(sEntrada, sSaida, sFormato, sBaseControle)
     Set oShell = Nothing
     On Error GoTo 0
     
-    WScript.Echo "Limpando arquivos de controle..."
-    If fso.FileExists(sComando) Then fso.DeleteFile sComando, True
-    If fso.FileExists(sSucesso) Then fso.DeleteFile sSucesso, True
-    If fso.FileExists(sErro) Then fso.DeleteFile sErro, True
-    Err.Clear
+    WScript.Echo "Aguardando macro ficar livre..."
+    Dim iPreWait
+    For iPreWait = 1 To 30
+        If Not fso.FileExists(sComando) And Not fso.FileExists(sSucesso) And Not fso.FileExists(sErro) Then
+            Exit For
+        End If
+        WScript.Echo "  Limpando residuos anteriores..."
+        If fso.FileExists(sComando) Then fso.DeleteFile sComando, True
+        If fso.FileExists(sSucesso) Then fso.DeleteFile sSucesso, True
+        If fso.FileExists(sErro) Then fso.DeleteFile sErro, True
+        Err.Clear
+        WScript.Sleep 2000
+    Next
     
     If fso.FileExists(sSaida) Then 
         fso.DeleteFile sSaida, True
@@ -122,7 +128,7 @@ Function ExportarViaComando(sEntrada, sSaida, sFormato, sBaseControle)
         fso.CreateFolder sPasta
     End If
     
-    WScript.Echo "Escrevendo comando..."
+    WScript.Echo "Escrevendo comando: " & sFormato & " -> " & sSaida
     Dim oFile
     Set oFile = fso.CreateTextFile(sComando, True)
     oFile.WriteLine sEntrada & "|" & sSaida & "|" & sFormato
@@ -133,20 +139,32 @@ Function ExportarViaComando(sEntrada, sSaida, sFormato, sBaseControle)
     WScript.Echo "(Certifique-se que o macro IniciarServico esta rodando no Inventor)"
     
     Dim iTimeout, iWait
-    iTimeout = 120
+    iTimeout = 1200  ' 20 minutos - DWGs pesados de assembly podem demorar MUITO
     
     For iWait = 1 To iTimeout
         WScript.Sleep 1000
         
         If fso.FileExists(sSucesso) Then
-            WScript.Echo "Macro reportou SUCESSO!"
+            WScript.Echo "Macro reportou SUCESSO! (" & iWait & "s)"
+            
+            Dim sSucessoContent
+            sSucessoContent = ""
+            On Error Resume Next
+            Dim oSucFile
+            Set oSucFile = fso.OpenTextFile(sSucesso, 1)
+            If Not oSucFile Is Nothing Then
+                sSucessoContent = Trim(oSucFile.ReadAll)
+                oSucFile.Close
+            End If
+            Set oSucFile = Nothing
+            On Error GoTo 0
             
             If fso.FileExists(sErro) Then fso.DeleteFile sErro, True
             If fso.FileExists(sSucesso) Then fso.DeleteFile sSucesso, True
             If fso.FileExists(sComando) Then fso.DeleteFile sComando, True
             Err.Clear
             
-            WScript.Sleep 1000
+            WScript.Sleep 2000
             
             If fso.FileExists(sSaida) Then
                 Dim oFileCheck
@@ -159,7 +177,9 @@ Function ExportarViaComando(sEntrada, sSaida, sFormato, sBaseControle)
                 End If
                 Set oFileCheck = Nothing
             Else
-                WScript.Echo "AVISO: sucesso.txt criado mas arquivo nao existe!"
+                WScript.Echo "AVISO: sucesso.txt criado mas arquivo nao existe no destino!"
+                WScript.Echo "  Destino esperado: " & sSaida
+                WScript.Echo "  Conteudo sucesso.txt: " & sSucessoContent
             End If
             Exit Function
         End If
@@ -170,7 +190,7 @@ Function ExportarViaComando(sEntrada, sSaida, sFormato, sBaseControle)
             sMsgErro = oErroFile.ReadAll
             oErroFile.Close
             Set oErroFile = Nothing
-            WScript.Echo "Macro reportou ERRO: " & sMsgErro
+            WScript.Echo "Macro reportou ERRO (" & iWait & "s): " & sMsgErro
             
             If fso.FileExists(sErro) Then fso.DeleteFile sErro, True
             If fso.FileExists(sSucesso) Then fso.DeleteFile sSucesso, True

@@ -12,7 +12,7 @@ import java.io.File
 object InventorRunner {
 
     private const val VBS_NAME = "processar-inventor.vbs"
-    private const val TIMEOUT_MINUTES = 25
+    private const val TIMEOUT_MINUTES = 30  // DWGs pesados de assembly podem demorar >15 min
 
     fun isWindows(): Boolean =
         System.getProperty("os.name").lowercase().contains("windows")
@@ -51,38 +51,70 @@ object InventorRunner {
     }
 
     /**
-     * Resolve o arquivo de entrada: tenta o caminho original, depois extensões alternativas (.idw, .iam, .ipt)
-     * no mesmo diretório. Fallback para pastaProcessamento + nome.
+     * Resolve o arquivo de entrada: SEMPRE prioriza o IDW (arquivo principal).
+     * O arquivo_original pode ser .ipt/.iam (referência), mas quem abre é o IDW.
+     * Usa o diretório do arquivo_original para encontrar o IDW pelo nome_arquivo.
      */
     fun resolverArquivoEntrada(arquivoOriginal: String?, pastaProcessamento: String?, nomeArquivo: String): String {
         val raw = (arquivoOriginal ?: "").trim()
-        if (raw.isNotEmpty()) {
-            val f = File(raw.replace("/", File.separator))
-            if (f.exists()) return f.absolutePath
+        val nome = nomeArquivo.trim().ifEmpty { return "" }
 
-            // Tenta extensões alternativas no mesmo diretório do arquivo_original
-            val dir = f.parentFile
-            val nomeSemExt = f.nameWithoutExtension
-            if (dir != null) {
-                for (ext in listOf(".idw", ".iam", ".ipt")) {
-                    val alt = File(dir, nomeSemExt + ext)
-                    if (alt.exists()) {
-                        AppLog.info("Arquivo original não encontrado, usando alternativa: ${alt.absolutePath}")
-                        return alt.absolutePath
+        // Loga referência (.ipt/.iam) - só para diagnóstico
+        if (raw.isNotEmpty()) {
+            val refFile = File(raw.replace("/", File.separator))
+            if (refFile.exists()) {
+                AppLog.info("Referência encontrada: ${refFile.absolutePath}")
+            } else {
+                val nomeSemExt = refFile.nameWithoutExtension
+                val dir = refFile.parentFile
+                if (dir != null) {
+                    val altIam = File(dir, "$nomeSemExt.iam")
+                    val altIpt = File(dir, "$nomeSemExt.ipt")
+                    when {
+                        altIam.exists() -> AppLog.info("Referência .iam encontrada: ${altIam.absolutePath}")
+                        altIpt.exists() -> AppLog.info("Referência .ipt encontrada: ${altIpt.absolutePath}")
+                        else -> AppLog.warn("Referência não encontrada: ${refFile.absolutePath} (nem .ipt nem .iam)")
                     }
                 }
             }
         }
-        val base = pastaProcessamento?.trim()?.takeIf { it.isNotEmpty() } ?: return ""
-        val nome = nomeArquivo.trim().ifEmpty { return "" }
-        val candidato = File(base, nome)
-        if (candidato.exists()) return candidato.absolutePath
-        val nomeSemExt = nome.substringBeforeLast(".")
-        for (ext in listOf(".idw", ".iam", ".ipt")) {
-            val alt = File(base, nomeSemExt + ext)
-            if (alt.exists()) return alt.absolutePath
+
+        // 1) Tenta o IDW no diretório do arquivo_original
+        if (raw.isNotEmpty()) {
+            val dir = File(raw.replace("/", File.separator)).parentFile
+            if (dir != null) {
+                val idw = File(dir, nome)
+                if (idw.exists()) {
+                    AppLog.info("IDW encontrado: ${idw.absolutePath}")
+                    return idw.absolutePath
+                }
+            }
         }
-        return candidato.absolutePath
+
+        // 2) Tenta pastaProcessamento + nome_arquivo
+        val base = pastaProcessamento?.trim()?.takeIf { it.isNotEmpty() }
+        if (base != null) {
+            val idw = File(base, nome)
+            if (idw.exists()) {
+                AppLog.info("IDW encontrado em pastaProcessamento: ${idw.absolutePath}")
+                return idw.absolutePath
+            }
+        }
+
+        // 3) Fallback: o arquivo_original direto (caso já seja IDW)
+        if (raw.isNotEmpty()) {
+            val f = File(raw.replace("/", File.separator))
+            if (f.exists()) {
+                AppLog.info("Usando arquivo_original direto: ${f.absolutePath}")
+                return f.absolutePath
+            }
+        }
+
+        // 4) Não encontrou nada
+        val dirFallback = File(raw.replace("/", File.separator)).parentFile
+        val caminhoEsperado = if (dirFallback != null) File(dirFallback, nome).absolutePath else nome
+        AppLog.warn("IDW não encontrado: $caminhoEsperado")
+        return caminhoEsperado
     }
 
     data class Result(

@@ -2,6 +2,8 @@
 ; PostgreSQL embutido no instalador - sem download em runtime
 
 !include "MUI2.nsh"
+!include "nsDialogs.nsh"
+!include "LogicLib.nsh"
 
 ; --- Defines (passados pelo Gradle via /D) ---
 !ifndef APP_VERSION
@@ -32,8 +34,16 @@ SetCompressor /SOLID lzma
 !define MUI_ICON "${ICON_FILE}"
 !define MUI_UNICON "${ICON_FILE}"
 
+; --- Variaveis para modo de instalacao ---
+Var GemMode       ; "server" ou "viewer"
+Var ServerIP      ; IP do servidor (viewer)
+Var RadioServer   ; Handle radio button servidor
+Var RadioViewer   ; Handle radio button viewer
+Var InputIP       ; Handle input IP
+
 ; --- Paginas do instalador ---
 !insertmacro MUI_PAGE_WELCOME
+Page custom ModeSelectionPage ModeSelectionLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN
@@ -55,6 +65,58 @@ Function .onInit
   uninst:
     ExecWait '"$0" /S'
   done:
+FunctionEnd
+
+; ==========================================
+; Pagina customizada: Selecao de modo
+; ==========================================
+Function ModeSelectionPage
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  ; Titulo
+  ${NSD_CreateLabel} 0 0 100% 24u "Selecione o tipo de instalacao:"
+  Pop $0
+
+  ; Radio: Servidor (padrao)
+  ${NSD_CreateRadioButton} 20u 30u 100% 12u "Servidor (app completo com processamento Inventor)"
+  Pop $RadioServer
+  ${NSD_SetState} $RadioServer ${BST_CHECKED}
+
+  ; Radio: Viewer
+  ${NSD_CreateRadioButton} 20u 48u 100% 12u "Viewer (somente visualizacao, conecta em servidor remoto)"
+  Pop $RadioViewer
+
+  ; Label IP
+  ${NSD_CreateLabel} 20u 72u 100% 12u "IP do servidor (somente para Viewer):"
+  Pop $0
+
+  ; Input IP
+  ${NSD_CreateText} 20u 86u 200u 14u "192.168.1.66"
+  Pop $InputIP
+
+  StrCpy $GemMode "server"
+
+  nsDialogs::Show
+FunctionEnd
+
+Function ModeSelectionLeave
+  ; Verifica qual radio esta selecionado
+  ${NSD_GetState} $RadioServer $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $GemMode "server"
+  ${Else}
+    StrCpy $GemMode "viewer"
+    ; Le o IP digitado
+    ${NSD_GetText} $InputIP $ServerIP
+    ${If} $ServerIP == ""
+      MessageBox MB_OK|MB_ICONEXCLAMATION "Informe o IP do servidor para o modo Viewer."
+      Abort
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 ; --- Secao de instalacao ---
@@ -79,40 +141,64 @@ Section "Install"
   SetOutPath "$INSTDIR"
 
   ; ============================================
-  ; Prepara diretorios para PostgreSQL
+  ; Prepara diretorios
   ; ============================================
   DetailPrint "Preparando diretorios..."
   CreateDirectory "C:\gem-exportador"
   CreateDirectory "C:\gem-exportador\logs"
-  CreateDirectory "C:\gem-exportador\controle"
 
-  ; .env
-  FileOpen $0 "$INSTDIR\.env" w
-  FileWrite $0 'SERVER_HOST=127.0.0.1$\r$\n'
-  FileWrite $0 'SERVER_PORT=8080$\r$\n'
-  FileWrite $0 'SERVER_URL=http://localhost:8080$\r$\n'
-  FileWrite $0 'INVENTOR_PASTA_CONTROLE=C:\gem-exportador\controle$\r$\n'
-  FileWrite $0 'LOG_LEVEL=INFO$\r$\n'
-  FileWrite $0 'LOG_DIR=C:\gem-exportador\logs$\r$\n'
-  FileWrite $0 '$\r$\n'
-  FileWrite $0 '# PostgreSQL$\r$\n'
-  FileWrite $0 'DB_HOST=localhost$\r$\n'
-  FileWrite $0 'DB_PORT=5432$\r$\n'
-  FileWrite $0 'DB_NAME=gem_exportador$\r$\n'
-  FileWrite $0 'DB_USER=postgres$\r$\n'
-  FileWrite $0 'DB_PASSWORD=123$\r$\n'
-  FileClose $0
+  ; ============================================
+  ; Gera .env conforme modo selecionado
+  ; ============================================
+  StrCmp $GemMode "viewer" env_viewer env_server
 
-  ; Script de setup
-  File "/oname=setup-postgres.cmd" "setup-postgres.cmd"
+  env_server:
+    DetailPrint "Configurando modo SERVIDOR..."
+    CreateDirectory "C:\gem-exportador\controle"
+    FileOpen $0 "$INSTDIR\.env" w
+    FileWrite $0 'GEM_MODE=server$\r$\n'
+    FileWrite $0 'SERVER_HOST=0.0.0.0$\r$\n'
+    FileWrite $0 'SERVER_PORT=8080$\r$\n'
+    FileWrite $0 'SERVER_URL=http://localhost:8080$\r$\n'
+    FileWrite $0 'INVENTOR_PASTA_CONTROLE=C:\gem-exportador\controle$\r$\n'
+    FileWrite $0 'LOG_LEVEL=INFO$\r$\n'
+    FileWrite $0 'LOG_DIR=C:\gem-exportador\logs$\r$\n'
+    FileWrite $0 '$\r$\n'
+    FileWrite $0 '# PostgreSQL$\r$\n'
+    FileWrite $0 'DB_HOST=localhost$\r$\n'
+    FileWrite $0 'DB_PORT=5432$\r$\n'
+    FileWrite $0 'DB_NAME=gem_exportador$\r$\n'
+    FileWrite $0 'DB_USER=postgres$\r$\n'
+    FileWrite $0 'DB_PASSWORD=123$\r$\n'
+    FileClose $0
 
-  ; Baixa, configura e inicia PostgreSQL
-  DetailPrint "Configurando PostgreSQL (pode baixar na primeira vez)..."
-  nsExec::ExecToLog '"$INSTDIR\setup-postgres.cmd"'
-  Pop $0
-  StrCmp $0 "0" pg_ok
-    DetailPrint "Aviso: Setup PostgreSQL retornou codigo $0"
-  pg_ok:
+    ; Script de setup PostgreSQL (so no servidor)
+    File "/oname=setup-postgres.cmd" "setup-postgres.cmd"
+    DetailPrint "Configurando PostgreSQL (pode baixar na primeira vez)..."
+    nsExec::ExecToLog '"$INSTDIR\setup-postgres.cmd"'
+    Pop $0
+    StrCmp $0 "0" pg_ok
+      DetailPrint "Aviso: Setup PostgreSQL retornou codigo $0"
+    pg_ok:
+    Goto env_done
+
+  env_viewer:
+    DetailPrint "Configurando modo VIEWER (servidor: $ServerIP)..."
+    FileOpen $0 "$INSTDIR\.env" w
+    FileWrite $0 'GEM_MODE=viewer$\r$\n'
+    FileWrite $0 'SERVER_URL=http://$ServerIP:8080$\r$\n'
+    FileWrite $0 'LOG_LEVEL=INFO$\r$\n'
+    FileWrite $0 'LOG_DIR=C:\gem-exportador\logs$\r$\n'
+    FileWrite $0 '$\r$\n'
+    FileWrite $0 '# PostgreSQL (remoto no servidor)$\r$\n'
+    FileWrite $0 'DB_HOST=$ServerIP$\r$\n'
+    FileWrite $0 'DB_PORT=5432$\r$\n'
+    FileWrite $0 'DB_NAME=gem_exportador$\r$\n'
+    FileWrite $0 'DB_USER=postgres$\r$\n'
+    FileWrite $0 'DB_PASSWORD=123$\r$\n'
+    FileClose $0
+
+  env_done:
 
   ; Script de lancamento
   FileOpen $0 "$INSTDIR\launch.cmd" w
