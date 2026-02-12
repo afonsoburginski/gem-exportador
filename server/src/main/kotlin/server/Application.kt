@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.postgresql.PGConnection
+import server.backup.SupabaseBackup
 import server.broadcast.Broadcast
 import server.db.Database
 import server.db.DesenhoDao
@@ -63,8 +64,12 @@ fun Application.configureRouting() {
         }
     }
     
+    // BACKUP: Sync em tempo real para Supabase (nuvem)
+    val supabaseBackup = SupabaseBackup(db)
+    supabaseBackup.init()
+
     // REALTIME: Usa PostgreSQL LISTEN/NOTIFY para detectar mudanças
-    startPostgresListener(db, desenhoDao, queue, broadcast)
+    startPostgresListener(db, desenhoDao, queue, broadcast, supabaseBackup)
 
     routing {
         apiHealth()
@@ -93,7 +98,8 @@ private fun startPostgresListener(
     db: Database,
     desenhoDao: DesenhoDao,
     queue: ProcessingQueue,
-    broadcast: Broadcast
+    broadcast: Broadcast,
+    supabaseBackup: SupabaseBackup
 ) {
     // Cache para debounce - evita processar notificações duplicadas
     val lastProcessed = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -153,23 +159,21 @@ private fun startPostgresListener(
                                         when (op) {
                                             "INSERT" -> {
                                                 broadcast.sendInsert(desenho)
-                                                // Só adiciona à fila via NOTIFY para INSERTs novos
-                                                // (evita duplicação — a rota que inseriu já chama queue.add)
-                                                // queue.add tem dedup interno, mas melhor evitar chamadas desnecessárias
+                                                supabaseBackup.syncRecord(id)
                                                 if (desenho.status == "pendente") {
                                                     queue.add(desenho.id)
                                                     AppLog.info("[REALTIME] -> Adicionado à fila de processamento")
                                                 }
                                             }
                                             "UPDATE" -> {
-                                                // Apenas broadcast — NÃO re-adiciona à fila
-                                                // Quem controla a fila é ProcessingQueue e as rotas (retry, etc.)
                                                 broadcast.sendUpdate(desenho)
+                                                supabaseBackup.syncRecord(id)
                                             }
                                         }
                                     }
                                 } else if (op == "DELETE") {
                                     stateCache.remove(id)
+                                    supabaseBackup.deleteRecord(id)
                                     AppLog.info("[REALTIME] Registro deletado: $id")
                                 }
                             } catch (e: Exception) {

@@ -25,13 +25,6 @@ class ProcessingQueue(
     private val json = Json { ignoreUnknownKeys = true }
     data class Item(val desenhoId: String, val formato: String, val posicaoFila: Int, val tentativa: Int = 1)
 
-    companion object {
-        /** Máximo de tentativas automáticas por formato */
-        const val MAX_TENTATIVAS = 3
-        /** Delay (ms) entre tentativas para o Inventor se recuperar */
-        const val DELAY_RETRY_MS = 15_000L // 15 segundos
-    }
-
     private val queue = mutableListOf<Item>()
     private val mutex = Mutex()
     private var processing = false
@@ -78,6 +71,28 @@ class ProcessingQueue(
         }
     }
 
+    companion object {
+        /** Máximo de tentativas automáticas por formato */
+        const val MAX_TENTATIVAS = 3
+        /** Delay (ms) entre tentativas para o Inventor se recuperar */
+        const val DELAY_RETRY_MS = 15_000L // 15 segundos
+
+        /**
+         * Ordem de processamento dos formatos: leves primeiro, pesado (DWG) por último.
+         * Formatos não listados ficam no meio (prioridade 50).
+         */
+        private val FORMAT_ORDER = mapOf(
+            "pdf" to 1,
+            "dxf" to 2,
+            "dwf" to 3,
+            "step" to 4,
+            "stl" to 5,
+            "dwg" to 10  // DWG é o mais pesado — sempre por último
+        )
+
+        fun formatPriority(formato: String): Int = FORMAT_ORDER[formato.lowercase()] ?: 50
+    }
+
     suspend fun add(desenhoId: String, formatosOverride: List<String>? = null) {
         val desenho = desenhoDao.getById(desenhoId) ?: return
         val formatos = formatosOverride?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }
@@ -93,7 +108,8 @@ class ProcessingQueue(
                 if (!queue.any { it.desenhoId == desenhoId && it.formato == f })
                     queue.add(Item(desenhoId, f, desenho.posicaoFila ?: pos))
             }
-            queue.sortWith(compareBy({ it.posicaoFila }, { it.desenhoId }, { it.formato }))
+            // Ordena: posição na fila > desenho > formato (PDF antes, DWG por último)
+            queue.sortWith(compareBy({ it.posicaoFila }, { it.desenhoId }, { formatPriority(it.formato) }))
         }
         // Limpa progresso antigo ao adicionar (reenviar)
         progressoPorFormato.keys.filter { it.startsWith("$desenhoId:") }.forEach { progressoPorFormato.remove(it) }

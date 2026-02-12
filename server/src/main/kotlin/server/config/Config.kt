@@ -29,6 +29,11 @@ object Config {
     /** URL JDBC para conexão com PostgreSQL */
     val jdbcUrl: String get() = "jdbc:postgresql://$dbHost:$dbPort/$dbName"
 
+    // Supabase (backup na nuvem)
+    val supabaseUrl: String? get() = get("SUPABASE_URL", "").ifBlank { null }
+    val supabaseJdbcUrl: String? get() = supabaseUrl?.let { "jdbc:$it" }
+    val supabaseBackupEnabled: Boolean get() = get("SUPABASE_BACKUP_ENABLED", "false").toBoolean()
+
     /** Pasta dos logs (padrão: ./logs) */
     val logDir: File get() {
         val path = get("LOG_DIR", "")

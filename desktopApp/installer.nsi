@@ -170,6 +170,10 @@ Section "Install"
     FileWrite $0 'DB_NAME=gem_exportador$\r$\n'
     FileWrite $0 'DB_USER=postgres$\r$\n'
     FileWrite $0 'DB_PASSWORD=123$\r$\n'
+    FileWrite $0 '$\r$\n'
+    FileWrite $0 '# Supabase (backup na nuvem)$\r$\n'
+    FileWrite $0 'SUPABASE_URL=postgresql://postgres.vtqcakghscdpaupebwir:5XGHDAB2FLK2CKVi3t@aws-0-sa-east-1.pooler.supabase.com:6543/postgres$\r$\n'
+    FileWrite $0 'SUPABASE_BACKUP_ENABLED=true$\r$\n'
     FileClose $0
 
     ; Script de setup PostgreSQL (so no servidor)
