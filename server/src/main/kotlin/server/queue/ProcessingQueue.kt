@@ -78,16 +78,13 @@ class ProcessingQueue(
         const val DELAY_RETRY_MS = 15_000L // 15 segundos
 
         /**
-         * Ordem de processamento dos formatos: leves primeiro, pesado (DWG) por último.
-         * Formatos não listados ficam no meio (prioridade 50).
+         * Ordem de processamento: PDF > DWF > DWG (somente esses três).
+         * DWG sempre por último (mais pesado).
          */
         private val FORMAT_ORDER = mapOf(
             "pdf" to 1,
-            "dxf" to 2,
-            "dwf" to 3,
-            "step" to 4,
-            "stl" to 5,
-            "dwg" to 10  // DWG é o mais pesado — sempre por último
+            "dwf" to 2,
+            "dwg" to 10
         )
 
         fun formatPriority(formato: String): Int = FORMAT_ORDER[formato.lowercase()] ?: 50
@@ -95,9 +92,12 @@ class ProcessingQueue(
 
     suspend fun add(desenhoId: String, formatosOverride: List<String>? = null) {
         val desenho = desenhoDao.getById(desenhoId) ?: return
-        val formatos = formatosOverride?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }
-            ?: desenho.formatosSolicitados.ifEmpty { listOf("pdf") }
+        // Ordena formatos por prioridade ANTES de adicionar (DWG sempre por último)
+        val formatos = (formatosOverride?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }
+            ?: desenho.formatosSolicitados.ifEmpty { listOf("pdf") })
+            .sortedBy { formatPriority(it) }
         val pos = desenhoDao.countPendentesEProcessando()
+        AppLog.info("[QUEUE] Adicionando ${desenho.nomeArquivo}: formatos=${formatos} (ordenados por prioridade)")
         mutex.withLock {
             // Ignora se este desenho já está sendo processado agora
             if (currentItem?.desenhoId == desenhoId) {
@@ -108,11 +108,16 @@ class ProcessingQueue(
                 if (!queue.any { it.desenhoId == desenhoId && it.formato == f })
                     queue.add(Item(desenhoId, f, desenho.posicaoFila ?: pos))
             }
-            // Ordena: posição na fila > desenho > formato (PDF antes, DWG por último)
-            queue.sortWith(compareBy({ it.posicaoFila }, { it.desenhoId }, { formatPriority(it.formato) }))
+            // Ordena fila inteira: posição > desenho > formato (DWG SEMPRE por último)
+            sortQueue()
         }
         // Limpa progresso antigo ao adicionar (reenviar)
         progressoPorFormato.keys.filter { it.startsWith("$desenhoId:") }.forEach { progressoPorFormato.remove(it) }
+    }
+
+    /** Ordena a fila garantindo DWG sempre por último dentro de cada desenho */
+    private fun sortQueue() {
+        queue.sortWith(compareBy({ it.posicaoFila }, { it.desenhoId }, { formatPriority(it.formato) }))
     }
 
     fun remove(desenhoId: String): Boolean {
@@ -255,6 +260,7 @@ class ProcessingQueue(
                     delay(DELAY_RETRY_MS)
                     mutex.withLock {
                         queue.add(Item(item.desenhoId, item.formato, item.posicaoFila, proxTentativa))
+                        sortQueue()
                     }
                     // Não registra erro ainda — só quando esgotar tentativas
                     // Atualiza status para processando e continua

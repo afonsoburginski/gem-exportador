@@ -31,18 +31,15 @@ cscript processar-inventor.vbs "C:\arquivo.iam" "C:\saida\" "pdf,dwg" [pasta_con
 - ✅ Autodesk Inventor instalado no servidor
 - ❌ **NÃO precisa mais** do macro VBA importado no Inventor
 
-### Formatos Suportados
+### Formatos utilizados nesta ferramenta
 
-O script suporta os seguintes formatos:
+Ordem de processamento: **PDF → DWF → DWG** (somente esses três).
 
 - `pdf` - PDF (funciona para Drawing, Part e Assembly)
   - Drawing: exporta diretamente
   - Part/Assembly: cria Drawing temporário e exporta
-- `dwg` - AutoCAD DWG (apenas Drawing)
-- `dxf` - AutoCAD DXF (apenas Drawing)
 - `dwf` - Design Web Format (apenas Drawing)
-- `step` - STEP (Part e Assembly)
-- `stl` - STL (apenas Part)
+- `dwg` - AutoCAD DWG (apenas Drawing) — sempre por último (mais pesado)
 
 ### Características
 

@@ -23,7 +23,7 @@ object UpdateDownloader {
     }
     
     /**
-     * Baixa o arquivo MSI da URL especificada
+     * Baixa o arquivo da URL especificada
      * @param url URL do arquivo para download
      * @param onProgress Callback com progresso (0-100)
      * @return Arquivo baixado ou null em caso de erro
@@ -49,6 +49,8 @@ object UpdateDownloader {
             
             val connection = URL(url).openConnection()
             connection.setRequestProperty("User-Agent", "GemExportador/${AppVersion.current}")
+            connection.connectTimeout = 30_000
+            connection.readTimeout = 120_000
             
             val contentLength = connection.contentLengthLong
             var downloaded = 0L
@@ -82,7 +84,13 @@ object UpdateDownloader {
     }
     
     /**
-     * Executa o instalador (suporta .exe do NSIS e .msi legado)
+     * Executa o instalador (suporta .exe do NSIS e .msi legado).
+     * 
+     * Para NSIS (.exe): cria um script batch auxiliar que aguarda o app fechar
+     * e então lança o instalador via "start" para lidar corretamente com
+     * UAC elevation (RequestExecutionLevel admin). O ProcessBuilder direto
+     * falha com CreateProcess error=740 para .exe que requerem admin.
+     * 
      * @param installerFile Arquivo do instalador
      * @return true se o instalador foi iniciado com sucesso
      */
@@ -93,27 +101,49 @@ object UpdateDownloader {
                 return false
             }
             
-            println("[UPDATE] Executando instalador: ${installerFile.absolutePath}")
+            println("[UPDATE] Preparando instalador: ${installerFile.absolutePath} (${installerFile.length()} bytes)")
             
-            val process = if (installerFile.name.endsWith(".msi")) {
-                // Instalador MSI legado
-                ProcessBuilder(
-                    "msiexec",
-                    "/i",
-                    installerFile.absolutePath,
-                    "/passive",
-                    "/norestart"
-                ).start()
-            } else {
-                // Instalador NSIS (.exe) - executa diretamente com /S para modo silencioso
-                ProcessBuilder(
-                    installerFile.absolutePath,
-                    "/S"
-                ).start()
+            // Desbloqueia o arquivo (Windows pode bloquear downloads da internet)
+            try {
+                ProcessBuilder("powershell", "-Command",
+                    "Unblock-File -Path '${installerFile.absolutePath}' -ErrorAction SilentlyContinue")
+                    .redirectErrorStream(true).start().waitFor()
+                println("[UPDATE] Arquivo desbloqueado")
+            } catch (e: Exception) {
+                println("[UPDATE] Aviso: não foi possível desbloquear arquivo: ${e.message}")
             }
             
-            // Não espera o processo terminar, pois o app vai fechar
-            println("[UPDATE] Instalador iniciado com PID: ${process.pid()}")
+            if (installerFile.name.endsWith(".msi")) {
+                // Instalador MSI legado
+                ProcessBuilder(
+                    "msiexec", "/i", installerFile.absolutePath, "/passive", "/norestart"
+                ).start()
+                println("[UPDATE] MSI iniciado")
+            } else {
+                // Instalador NSIS (.exe) - NÃO podemos usar ProcessBuilder direto
+                // porque o .exe requer admin (RequestExecutionLevel admin no NSIS)
+                // e ProcessBuilder falha com "CreateProcess error=740".
+                //
+                // Solução: criar um batch auxiliar que usa "start" do cmd.exe,
+                // que corretamente dispara o prompt UAC do Windows.
+                // O timeout de 2s garante que o app Java já fechou quando o
+                // instalador iniciar (evita conflito de arquivos).
+                val batchFile = File(installerFile.parentFile, "gem-run-update.cmd")
+                batchFile.writeText(
+                    "@echo off\r\n" +
+                    "timeout /t 2 /nobreak >NUL\r\n" +
+                    "start \"GemExportador Update\" \"${installerFile.absolutePath}\" /S\r\n" +
+                    "del \"%~f0\"\r\n" // batch se auto-deleta
+                )
+                
+                ProcessBuilder("cmd", "/c", batchFile.absolutePath)
+                    .redirectErrorStream(true)
+                    .directory(installerFile.parentFile)
+                    .start()
+                    
+                println("[UPDATE] Batch de atualização iniciado: ${batchFile.absolutePath}")
+            }
+            
             true
             
         } catch (e: Exception) {

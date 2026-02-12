@@ -111,6 +111,9 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
         AppVersion.init()
         logToFile("INFO", "Versão atual: ${AppVersion.current}")
         
+        // Limpa arquivos de atualização antigos (> 7 dias)
+        cleanupOldUpdates()
+        
         // Aguarda 3 segundos antes de verificar (para não atrasar startup)
         delay(3000)
         
@@ -264,3 +267,5 @@ expect fun getSqliteDatabasePath(): String?
 expect suspend fun checkForUpdates(): VersionInfo?
 /** Executa o processo de atualização (download + instalação) */
 expect suspend fun performUpdate(version: VersionInfo, onStateChange: (UpdateState) -> Unit)
+/** Limpa arquivos de atualização antigos */
+expect fun cleanupOldUpdates()

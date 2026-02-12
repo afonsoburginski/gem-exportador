@@ -52,6 +52,10 @@ actual suspend fun performUpdate(version: VersionInfo, onStateChange: (UpdateSta
     }
 }
 
+actual fun cleanupOldUpdates() {
+    UpdateDownloader.cleanupOldUpdates()
+}
+
 @Composable 
 fun MainView() {
     val databaseDriverFactory = DatabaseDriverFactory()

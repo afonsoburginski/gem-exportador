@@ -58,10 +58,28 @@ Page custom ModeSelectionPage ModeSelectionLeave
 !insertmacro MUI_LANGUAGE "PortugueseBR"
 
 ; --- Funcao para desinstalar versao anterior ---
+; Em silent mode (/S = auto-update): não roda o uninstaller antigo,
+; apenas sobrescreve os arquivos. Isso evita que o uninstaller antigo
+; (que não tem suporte a /SD) mostre MessageBox bloqueante.
+; Também preserva .env, PostgreSQL e config existente.
 Function .onInit
+  ${If} ${Silent}
+    ; AUTO-UPDATE: ler config existente do registro e pular uninstall
+    ReadRegStr $INSTDIR HKLM "Software\${APP_NAME}" "InstallDir"
+    ${If} $INSTDIR == ""
+      StrCpy $INSTDIR "$PROGRAMFILES\${APP_NAME}"
+    ${EndIf}
+    ReadRegStr $GemMode HKLM "Software\${APP_NAME}" "GemMode"
+    ${If} $GemMode == ""
+      StrCpy $GemMode "server"
+    ${EndIf}
+    Goto done
+  ${EndIf}
+
+  ; INSTALACAO INTERATIVA: verificar versao anterior
   ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "UninstallString"
   StrCmp $0 "" done
-  MessageBox MB_YESNO|MB_ICONQUESTION "Uma versao anterior do ${APP_NAME} foi encontrada. Deseja desinstalar antes de continuar?" IDYES uninst IDNO done
+  MessageBox MB_YESNO|MB_ICONQUESTION "Uma versao anterior do ${APP_NAME} foi encontrada.$\nDeseja desinstalar antes de continuar?" /SD IDYES IDYES uninst IDNO done
   uninst:
     ExecWait '"$0" /S'
   done:
@@ -71,6 +89,20 @@ FunctionEnd
 ; Pagina customizada: Selecao de modo
 ; ==========================================
 Function ModeSelectionPage
+  ; Em silent mode (auto-update): pular pagina, manter config existente
+  ${If} ${Silent}
+    Abort
+  ${EndIf}
+
+  ; Em upgrade interativo: se GemMode ja existe no registro, pular tambem
+  ReadRegStr $0 HKLM "Software\${APP_NAME}" "GemMode"
+  ${If} $0 != ""
+    StrCpy $GemMode $0
+    ; Ler IP existente do registro para viewer
+    ReadRegStr $ServerIP HKLM "Software\${APP_NAME}" "ServerIP"
+    Abort
+  ${EndIf}
+
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
@@ -104,6 +136,11 @@ Function ModeSelectionPage
 FunctionEnd
 
 Function ModeSelectionLeave
+  ; Em silent mode: nada a validar
+  ${If} ${Silent}
+    Return
+  ${EndIf}
+
   ; Verifica qual radio esta selecionado
   ${NSD_GetState} $RadioServer $0
   ${If} $0 == ${BST_CHECKED}
@@ -122,6 +159,17 @@ FunctionEnd
 ; --- Secao de instalacao ---
 Section "Install"
   SetOutPath "$INSTDIR"
+
+  ; ============================================
+  ; Em silent mode (auto-update): limpar binarios antigos antes de copiar
+  ; Isso garante que arquivos obsoletos não fiquem residuais
+  ; ============================================
+  ${If} ${Silent}
+    DetailPrint "Atualizacao: limpando binarios antigos..."
+    RMDir /r "$INSTDIR\app"
+    RMDir /r "$INSTDIR\runtime"
+    RMDir /r "$INSTDIR\scripts"
+  ${EndIf}
 
   ; Icone do app
   File "/oname=${APP_NAME}.ico" "${ICON_FILE}"
@@ -148,8 +196,24 @@ Section "Install"
   CreateDirectory "C:\gem-exportador\logs"
 
   ; ============================================
-  ; Gera .env conforme modo selecionado
+  ; Em silent mode (auto-update): PRESERVAR .env existente
+  ; Não regenerar configuração — manter server/viewer, IP, banco, etc.
+  ; Também não re-executar setup-postgres.cmd (PostgreSQL já está instalado)
   ; ============================================
+  ${If} ${Silent}
+    DetailPrint "Atualizacao: preservando configuracao existente (.env)"
+    Goto env_done
+  ${EndIf}
+
+  ; ============================================
+  ; Instalacao interativa: gera .env conforme modo selecionado
+  ; ============================================
+
+  ; Se .env ja existe (upgrade interativo), perguntar se deseja manter
+  IfFileExists "$INSTDIR\.env" 0 env_generate
+    MessageBox MB_YESNO|MB_ICONQUESTION "Configuracao existente (.env) encontrada.$\nDeseja manter a configuracao atual?" /SD IDYES IDYES env_done IDNO env_generate
+
+  env_generate:
   StrCmp $GemMode "viewer" env_viewer env_server
 
   env_server:
@@ -176,7 +240,7 @@ Section "Install"
     FileWrite $0 'SUPABASE_BACKUP_ENABLED=true$\r$\n'
     FileClose $0
 
-    ; Script de setup PostgreSQL (so no servidor)
+    ; Script de setup PostgreSQL (so no servidor, primeira instalacao)
     File "/oname=setup-postgres.cmd" "setup-postgres.cmd"
     DetailPrint "Configurando PostgreSQL (pode baixar na primeira vez)..."
     nsExec::ExecToLog '"$INSTDIR\setup-postgres.cmd"'
@@ -254,12 +318,37 @@ Section "Install"
     "NoRepair" 1
   WriteRegStr HKLM "Software\${APP_NAME}" "InstallDir" "$INSTDIR"
   WriteRegStr HKLM "Software\${APP_NAME}" "GemMode" "$GemMode"
+  WriteRegStr HKLM "Software\${APP_NAME}" "ServerIP" "$ServerIP"
 SectionEnd
 
 ; --- Secao de desinstalacao ---
 Section "Uninstall"
   ; Verifica o modo de instalacao (server ou viewer)
   ReadRegStr $0 HKLM "Software\${APP_NAME}" "GemMode"
+
+  ; ============================================
+  ; Em silent mode (chamado durante auto-update):
+  ; - NAO parar PostgreSQL (continua rodando)
+  ; - NAO perguntar sobre dados
+  ; - NAO remover .env (preservar config)
+  ; - Apenas remover binarios do app
+  ; ============================================
+  ${If} ${Silent}
+    ; Apenas remover binarios para o novo instalador sobrescrever
+    RMDir /r "$INSTDIR\app"
+    RMDir /r "$INSTDIR\runtime"
+    RMDir /r "$INSTDIR\scripts"
+    Delete "$INSTDIR\${APP_NAME}.ico"
+    Delete "$INSTDIR\launch.cmd"
+    Delete "$INSTDIR\setup-postgres.cmd"
+    Delete "$INSTDIR\uninstall.exe"
+    ; NÃO remove .env, .registro, atalhos (novo instalador recria)
+    Goto uninstall_done
+  ${EndIf}
+
+  ; ============================================
+  ; Desinstalacao interativa completa
+  ; ============================================
 
   ; Somente servidor: para o servico PostgreSQL
   StrCmp $0 "viewer" skip_pg_stop
@@ -281,7 +370,7 @@ Section "Uninstall"
   ; Somente servidor: pergunta se deseja remover dados (banco, logs, PostgreSQL)
   ; Viewer NUNCA deve ter esta opcao — é instalado em muitas maquinas de usuarios
   StrCmp $0 "viewer" skip_removedata
-    MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover TODOS os dados (banco de dados, logs, PostgreSQL)?" IDYES removedata IDNO skip_removedata
+    MessageBox MB_YESNO|MB_ICONQUESTION "Deseja remover TODOS os dados (banco de dados, logs, PostgreSQL)?" /SD IDNO IDYES removedata IDNO skip_removedata
     removedata:
       RMDir /r "C:\gem-exportador"
   skip_removedata:
@@ -305,6 +394,8 @@ Section "Uninstall"
   ; Remove registro
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
   DeleteRegKey HKLM "Software\${APP_NAME}"
+
+  uninstall_done:
 SectionEnd
 
 ; --- Funcao para lancar o app ---

@@ -126,10 +126,10 @@ fun Route.apiDesenhos(desenhoDao: DesenhoDao, queue: ProcessingQueue, broadcast:
         }
 
         val formatosList = formatos?.let { kotlinx.serialization.json.Json.decodeFromString<List<String>>(it) } ?: listOf("pdf")
-        val validFormats = setOf("pdf", "dwg", "dxf", "dwf", "step", "stl", "bom", "csv")
-        val formatosValidados = formatosList.map { it.trim().lowercase() }.filter { it in validFormats }
-        if (formatosValidados.isEmpty()) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Nenhum formato válido", mensagem = "Especifique pelo menos um: pdf, dwg, dxf, dwf"))
+val validFormats = setOf("pdf", "dwf", "dwg")
+            val formatosValidados = formatosList.map { it.trim().lowercase() }.filter { it in validFormats }
+            if (formatosValidados.isEmpty()) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Nenhum formato válido", mensagem = "Especifique pelo menos um: pdf, dwf, dwg"))
             return@post
         }
 
@@ -191,12 +191,12 @@ fun Route.apiDesenhos(desenhoDao: DesenhoDao, queue: ProcessingQueue, broadcast:
             return@post
         }
         
-        val validFormats = setOf("pdf", "dwg", "dxf", "dwf", "step", "stl", "bom", "csv")
+        val validFormats = setOf("pdf", "dwf", "dwg")
         val formatosValidados = body.formatos.map { it.trim().lowercase() }.filter { it in validFormats }
         if (formatosValidados.isEmpty()) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse(
                 erro = "Nenhum formato válido",
-                mensagem = "Especifique pelo menos um: pdf, dwg, dxf, dwf"
+                mensagem = "Especifique pelo menos um: pdf, dwf, dwg"
             ))
             return@post
         }
@@ -295,6 +295,7 @@ fun Route.apiDesenhos(desenhoDao: DesenhoDao, queue: ProcessingQueue, broadcast:
         val solicitados = d.formatosSolicitados.ifEmpty { listOf("pdf") }
         val jaGerados = d.arquivosProcessados.map { it.tipo.lowercase() }.toSet()
         val restantes = solicitados.map { it.lowercase() }.filter { !jaGerados.contains(it) }
+            .sortedBy { ProcessingQueue.formatPriority(it) } // DWG sempre por último
         if (restantes.isEmpty()) {
             AppLog.warn("[RETRY] Nada a reprocessar para ${d.nomeArquivo}: solicitados=$solicitados jaGerados=$jaGerados")
             call.respond(HttpStatusCode.BadRequest, ErrorResponse(erro = "Nada a reprocessar: todos os formatos já gerados"))
