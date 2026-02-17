@@ -23,7 +23,7 @@ class ProcessingQueue(
     private val broadcast: Broadcast
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    data class Item(val desenhoId: String, val formato: String, val posicaoFila: Int, val tentativa: Int = 1)
+    data class Item(val desenhoId: String, val formato: String, val posicaoFila: Int, val tentativa: Int = 1, val horarioEnvio: String = "")
 
     private val queue = mutableListOf<Item>()
     private val mutex = Mutex()
@@ -106,18 +106,23 @@ class ProcessingQueue(
             }
             formatos.forEach { f ->
                 if (!queue.any { it.desenhoId == desenhoId && it.formato == f })
-                    queue.add(Item(desenhoId, f, desenho.posicaoFila ?: pos))
+                    queue.add(Item(desenhoId, f, desenho.posicaoFila ?: pos, 1, desenho.horarioEnvio))
             }
-            // Ordena fila inteira: posição > desenho > formato (DWG SEMPRE por último)
+            // Ordena fila: posicao (FIFO) > horario_envio (primeiro recebido) > formato (DWG por ultimo)
             sortQueue()
         }
         // Limpa progresso antigo ao adicionar (reenviar)
         progressoPorFormato.keys.filter { it.startsWith("$desenhoId:") }.forEach { progressoPorFormato.remove(it) }
     }
 
-    /** Ordena a fila garantindo DWG sempre por último dentro de cada desenho */
+    /** Ordena a fila por ordem de recebimento (FIFO): posicao_fila, depois horario_envio, depois formato (DWG por ultimo). */
     private fun sortQueue() {
-        queue.sortWith(compareBy({ it.posicaoFila }, { it.desenhoId }, { formatPriority(it.formato) }))
+        queue.sortWith(compareBy(
+            { it.posicaoFila },
+            { it.horarioEnvio },
+            { it.desenhoId },
+            { formatPriority(it.formato) }
+        ))
     }
 
     fun remove(desenhoId: String): Boolean {
@@ -259,7 +264,7 @@ class ProcessingQueue(
                     // Delay para o Inventor se recuperar
                     delay(DELAY_RETRY_MS)
                     mutex.withLock {
-                        queue.add(Item(item.desenhoId, item.formato, item.posicaoFila, proxTentativa))
+                        queue.add(Item(item.desenhoId, item.formato, item.posicaoFila, proxTentativa, item.horarioEnvio))
                         sortQueue()
                     }
                     // Não registra erro ainda — só quando esgotar tentativas

@@ -129,7 +129,8 @@ fun DesenhosTable(
         
         fila.sortWith(compareBy(
             { if (it.statusEnum == DesenhoStatus.PROCESSANDO) 0 else 1 },
-            { it.posicaoFila ?: Int.MAX_VALUE }
+            { it.posicaoFila ?: Int.MAX_VALUE },
+            { it.horarioEnvio }
         ))
         
         Triple(fila, ok, problema)

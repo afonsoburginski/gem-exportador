@@ -68,6 +68,9 @@ data class CancelResponse(
     val status: String
 )
 
+/** Lock para atribuicao atomica de posicao na fila (FIFO: primeiro recebido = menor posicao). */
+private val queuePositionLock = Any()
+
 fun Route.apiDesenhos(desenhoDao: DesenhoDao, queue: ProcessingQueue, broadcast: Broadcast) {
     // GET /api/desenhos - lista com filtros
     get("/api/desenhos") {
@@ -135,11 +138,13 @@ val validFormats = setOf("pdf", "dwf", "dwg")
 
         val id = UUID.randomUUID().toString()
         val now = java.time.Instant.now().toString()
-        val pos = desenhoDao.countPendentesEProcessando() + 1
         val pastaProcessamento = File(System.getProperty("user.dir"), "processados").resolve(id).apply { mkdirs() }
         val arquivoFinal = pastaProcessamento.resolve(fileName ?: nomeArquivo!!)
         File(arquivoFinal.toURI()).writeBytes(fileBytes!!)
 
+        val pos = synchronized(queuePositionLock) {
+            desenhoDao.countPendentesEProcessando() + 1
+        }
         val desenho = DesenhoAutodesk(
             id = id,
             nomeArquivo = nomeArquivo!!,
@@ -204,7 +209,9 @@ val validFormats = setOf("pdf", "dwf", "dwg")
         
         val id = UUID.randomUUID().toString()
         val now = java.time.Instant.now().toString()
-        val pos = desenhoDao.countPendentesEProcessando() + 1
+        val pos = synchronized(queuePositionLock) {
+            desenhoDao.countPendentesEProcessando() + 1
+        }
         val pastaProcessamento = File(System.getProperty("user.dir"), "processados").resolve(id).apply { mkdirs() }
         
         val desenho = DesenhoAutodesk(
@@ -236,7 +243,7 @@ val validFormats = setOf("pdf", "dwf", "dwg")
         ))
     }
 
-    // POST /api/desenhos/queue/batch - adiciona ate 100 arquivos em uma unica requisicao (evita perda por limite de conexoes)
+    // POST /api/desenhos/queue/batch - adiciona ate 100 arquivos em uma unica requisicao (FIFO: posicoes atribuidas em sequencia)
     post("/api/desenhos/queue/batch") {
         val body = call.receive<List<QueueBody>>()
         val limit = body.take(100)
@@ -244,49 +251,51 @@ val validFormats = setOf("pdf", "dwf", "dwg")
         val validFormats = setOf("pdf", "dwf", "dwg")
         val ids = mutableListOf<String>()
         val erros = mutableListOf<String>()
-        for (item in limit) {
-            try {
-                if (item.nomeArquivo.isBlank() || item.computador.isBlank() || item.caminhoDestino.isBlank() || item.arquivoOriginal.isBlank()) {
-                    erros.add("${item.nomeArquivo}: campos obrigatorios faltando")
-                    continue
+        synchronized(queuePositionLock) {
+            for (item in limit) {
+                try {
+                    if (item.nomeArquivo.isBlank() || item.computador.isBlank() || item.caminhoDestino.isBlank() || item.arquivoOriginal.isBlank()) {
+                        erros.add("${item.nomeArquivo}: campos obrigatorios faltando")
+                        continue
+                    }
+                    val arquivoFile = File(item.arquivoOriginal)
+                    if (!arquivoFile.exists()) {
+                        erros.add("${item.nomeArquivo}: arquivo nao encontrado")
+                        continue
+                    }
+                    val formatosValidados = item.formatos.map { it.trim().lowercase() }.filter { it in validFormats }
+                    if (formatosValidados.isEmpty()) {
+                        erros.add("${item.nomeArquivo}: nenhum formato valido")
+                        continue
+                    }
+                    val id = UUID.randomUUID().toString()
+                    val now = java.time.Instant.now().toString()
+                    val pos = desenhoDao.countPendentesEProcessando() + 1
+                    val pastaProcessamento = File(System.getProperty("user.dir"), "processados").resolve(id).apply { mkdirs() }
+                    val desenho = DesenhoAutodesk(
+                        id = id,
+                        nomeArquivo = item.nomeArquivo,
+                        computador = item.computador,
+                        caminhoDestino = item.caminhoDestino,
+                        status = "pendente",
+                        posicaoFila = pos,
+                        horarioEnvio = now,
+                        horarioAtualizacao = now,
+                        formatosSolicitadosJson = """["${formatosValidados.joinToString("\",\"")}"]""",
+                        arquivoOriginal = item.arquivoOriginal,
+                        pastaProcessamento = pastaProcessamento.absolutePath,
+                        criadoEm = now,
+                        atualizadoEm = now
+                    )
+                    desenhoDao.insert(desenho)
+                    queue.add(id)
+                    broadcast.sendInsert(desenhoDao.getById(id)!!)
+                    ids.add(id)
+                    AppLog.info("[POST queue/batch] inserido: ${item.nomeArquivo} (${item.computador})")
+                } catch (e: Exception) {
+                    AppLog.error("Erro ao inserir ${item.nomeArquivo} no batch: ${e.message}", e)
+                    erros.add("${item.nomeArquivo}: ${e.message}")
                 }
-                val arquivoFile = File(item.arquivoOriginal)
-                if (!arquivoFile.exists()) {
-                    erros.add("${item.nomeArquivo}: arquivo nao encontrado")
-                    continue
-                }
-                val formatosValidados = item.formatos.map { it.trim().lowercase() }.filter { it in validFormats }
-                if (formatosValidados.isEmpty()) {
-                    erros.add("${item.nomeArquivo}: nenhum formato valido")
-                    continue
-                }
-                val id = UUID.randomUUID().toString()
-                val now = java.time.Instant.now().toString()
-                val pos = desenhoDao.countPendentesEProcessando() + 1
-                val pastaProcessamento = File(System.getProperty("user.dir"), "processados").resolve(id).apply { mkdirs() }
-                val desenho = DesenhoAutodesk(
-                    id = id,
-                    nomeArquivo = item.nomeArquivo,
-                    computador = item.computador,
-                    caminhoDestino = item.caminhoDestino,
-                    status = "pendente",
-                    posicaoFila = pos,
-                    horarioEnvio = now,
-                    horarioAtualizacao = now,
-                    formatosSolicitadosJson = """["${formatosValidados.joinToString("\",\"")}"]""",
-                    arquivoOriginal = item.arquivoOriginal,
-                    pastaProcessamento = pastaProcessamento.absolutePath,
-                    criadoEm = now,
-                    atualizadoEm = now
-                )
-                desenhoDao.insert(desenho)
-                queue.add(id)
-                broadcast.sendInsert(desenhoDao.getById(id)!!)
-                ids.add(id)
-                AppLog.info("[POST queue/batch] inserido: ${item.nomeArquivo} (${item.computador})")
-            } catch (e: Exception) {
-                AppLog.error("Erro ao inserir ${item.nomeArquivo} no batch: ${e.message}", e)
-                erros.add("${item.nomeArquivo}: ${e.message}")
             }
         }
         AppLog.info("[POST queue/batch] concluido: ${ids.size} inseridos, ${erros.size} erros")
@@ -364,7 +373,9 @@ val validFormats = setOf("pdf", "dwf", "dwg")
             return@post
         }
         AppLog.info("[RETRY] Reprocessando ${d.nomeArquivo}: formatos restantes=$restantes")
-        val pos = desenhoDao.countPendentesEProcessando() + 1
+        val pos = synchronized(queuePositionLock) {
+            desenhoDao.countPendentesEProcessando() + 1
+        }
         val now = java.time.Instant.now().toString()
         desenhoDao.update(id, status = "pendente", horarioAtualizacao = now, progresso = 0, erro = null, canceladoEm = null, posicaoFila = pos)
         queue.add(id, restantes)

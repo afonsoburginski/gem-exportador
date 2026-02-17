@@ -24,6 +24,22 @@ class DesenhoDao(private val database: Database) {
         }
     }
 
+    /** Pendentes + processando em ordem FIFO (primeiro recebido = primeiro na fila). Usado no startup da fila. */
+    fun listPendentesEProcessandoOrderedByFila(limit: Int = 200): List<DesenhoAutodesk> {
+        val sql = """
+            SELECT * FROM desenho 
+            WHERE status IN ('pendente', 'processando') 
+            ORDER BY (posicao_fila IS NULL), posicao_fila ASC NULLS LAST, horario_envio ASC 
+            LIMIT ?
+        """.trimIndent()
+        return database.connection().use { conn ->
+            conn.prepareStatement(sql).use { stmt ->
+                stmt.setInt(1, limit)
+                stmt.executeQuery().use { rs -> rs.map { it.toDesenho() } }
+            }
+        }
+    }
+
     fun count(status: String? = null): Int {
         val sql = if (status != null) "SELECT COUNT(*) FROM desenho WHERE status = ?" else "SELECT COUNT(*) FROM desenho"
         return database.connection().use { conn ->
