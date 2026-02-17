@@ -4,307 +4,234 @@ Option Explicit
 Global TipoArquivo As String
 Global ExpTodos As Boolean
 
-Const CONFIG_PATH As String = "C:\GD_GEM\config.ini"
 
-Public Function ObterArquivosReferenciados(oDoc As Document) As String()
-    ' TEMPORARIAMENTE DESABILITADO PARA ISOLAR O PROBLEMA
-    Dim sArquivosRef() As String
-    ReDim sArquivosRef(0 To -1)
-    ObterArquivosReferenciados = sArquivosRef
-    Exit Function
-    
-    On Error GoTo ErrorHandlerFunc
-    
-    ReDim sArquivosRef(0 To -1)
-    Dim iCount As Integer
-    Dim i As Integer
-    Dim oRefFileDescs As ReferencedFileDescriptors
-    Dim oRefFileDesc As ReferencedFileDescriptor
-    Dim sCaminhoRef As String
-    Dim sExt As String
-    Dim oDrawingDoc As DrawingDocument
-    Dim oReferencedDocs As Documents
-    Dim oRefDoc As Document
-    Dim sCaminhoRef2 As String
-    Dim sExt2 As String
-    
-    iCount = 0
-    
-    If oDoc.DocumentType <> kDrawingDocumentObject Then
-        ReDim sArquivosRef(0 To -1)
-        ObterArquivosReferenciados = sArquivosRef
-        Exit Function
-    End If
-    
-    On Error Resume Next
-    Set oRefFileDescs = oDoc.ReferencedFileDescriptors
-    If Err.Number <> 0 Then
-        Err.Clear
-        GoTo SkipRefFileDescs
-    End If
-    If oRefFileDescs Is Nothing Then
-        GoTo SkipRefFileDescs
-    End If
-    
-    On Error Resume Next
-    Dim iRefCount As Integer
-    iRefCount = oRefFileDescs.Count
-    If Err.Number <> 0 Or iRefCount <= 0 Then
-        Err.Clear
-        GoTo SkipRefFileDescs
-    End If
-    
-    For i = 1 To iRefCount
-        On Error Resume Next
-        If i < 1 Or i > iRefCount Then
-            Err.Clear
-            GoTo NextRefFileDesc
-        End If
-        Set oRefFileDesc = oRefFileDescs.Item(i)
-                    If Err.Number = 0 And Not oRefFileDesc Is Nothing Then
-                    On Error Resume Next
-                    sCaminhoRef = oRefFileDesc.FullFileName
-                    If Err.Number <> 0 Then
-                        Err.Clear
-                        sCaminhoRef = ""
-                    End If
-                    Err.Clear
-                    If Len(sCaminhoRef) >= 4 Then
-                        sExt = LCase(Right(sCaminhoRef, 4))
-                    Else
-                        sExt = ""
-                    End If
-                    
-                        If sCaminhoRef <> "" And Dir(sCaminhoRef) <> "" And (sExt = ".iam" Or sExt = ".ipt" Or sExt = ".idw") Then
-                            On Error Resume Next
-                            If iCount = 0 Then
-                                ReDim sArquivosRef(0 To 0)
-                            Else
-                                ReDim Preserve sArquivosRef(0 To iCount)
-                            End If
-                            If Err.Number = 0 Then
-                                On Error Resume Next
-                                Dim iUBoundTest As Integer
-                                iUBoundTest = UBound(sArquivosRef)
-                                If Err.Number = 0 And iUBoundTest >= iCount Then
-                                    sArquivosRef(iCount) = sCaminhoRef
-                                    If Err.Number = 0 Then
-                                        iCount = iCount + 1
-                                    End If
-                                End If
-                                Err.Clear
-                            End If
-                            Err.Clear
-                        End If
-                    End If
-                    Err.Clear
-                End If
-            Next
-        End If
-        Err.Clear
-    End If
-    Err.Clear
-    
-    If iCount = 0 Then
-        Set oDrawingDoc = oDoc
-        On Error Resume Next
-        Set oReferencedDocs = oDrawingDoc.ReferencedDocuments
-        If Err.Number <> 0 Then
-            Err.Clear
-            GoTo SkipReferencedDocs
-        End If
-        If oReferencedDocs Is Nothing Then
-            GoTo SkipReferencedDocs
-        End If
-        
-        On Error Resume Next
-        Dim iRefDocsCount As Integer
-        iRefDocsCount = oReferencedDocs.Count
-        If Err.Number <> 0 Or iRefDocsCount <= 0 Then
-            Err.Clear
-            GoTo SkipReferencedDocs
-        End If
-        
-        For i = 1 To iRefDocsCount
-            On Error Resume Next
-            If i < 1 Or i > iRefDocsCount Then
-                Err.Clear
-                GoTo NextReferencedDoc
-            End If
-            Set oRefDoc = oReferencedDocs.Item(i)
-                        If Err.Number = 0 And Not oRefDoc Is Nothing Then
-                        On Error Resume Next
-                        sCaminhoRef2 = oRefDoc.FullFileName
-                        If Err.Number <> 0 Then
-                            Err.Clear
-                            sCaminhoRef2 = ""
-                        End If
-                        Err.Clear
-                        If Len(sCaminhoRef2) >= 4 Then
-                            sExt2 = LCase(Right(sCaminhoRef2, 4))
-                        Else
-                            sExt2 = ""
-                        End If
-                        
-                        If sCaminhoRef2 <> "" And Dir(sCaminhoRef2) <> "" And (sExt2 = ".iam" Or sExt2 = ".ipt" Or sExt2 = ".idw") Then
-                                On Error Resume Next
-                                If iCount = 0 Then
-                                    ReDim sArquivosRef(0 To 0)
-                                Else
-                                    ReDim Preserve sArquivosRef(0 To iCount)
-                                End If
-                                If Err.Number = 0 Then
-                                    On Error Resume Next
-                                    Dim iUBoundTest2 As Integer
-                                    iUBoundTest2 = UBound(sArquivosRef)
-                                    If Err.Number = 0 And iUBoundTest2 >= iCount Then
-                                        sArquivosRef(iCount) = sCaminhoRef2
-                                        If Err.Number = 0 Then
-                                            iCount = iCount + 1
-                                        End If
-                                    End If
-                                    Err.Clear
-                                End If
-                                Err.Clear
-                            End If
-                        End If
-                        Err.Clear
-                    End If
-                Next
-            End If
-            Err.Clear
-        End If
-        Err.Clear
-    End If
-    
-    If iCount = 0 Then
-        ReDim sArquivosRef(0 To -1)
-    End If
-    
-    ObterArquivosReferenciados = sArquivosRef
-End Function
-
-Private Function IsUserForm1Loaded() As Boolean
-    On Error Resume Next
-    Dim test As String
-    test = UserForm1.Caption
-    IsUserForm1Loaded = (Err.Number = 0)
-    On Error GoTo 0
-End Function
-
-Private Sub UpdateUserForm1Label(labelName As String, caption As String)
-    On Error Resume Next
-    If Not IsUserForm1Loaded() Then
-        Err.Clear
-        Exit Sub
-    End If
-    
-    Dim oControl As Object
-    On Error Resume Next
-    Set oControl = UserForm1.Controls(labelName)
-    If Err.Number <> 0 Or oControl Is Nothing Then
-        Err.Clear
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    oControl.Caption = caption
-    Err.Clear
-    Set oControl = Nothing
-End Sub
-
-Sub DetectarTipoDeArquivoAberto()
-    On Error GoTo erro
+ 
+ 
+ Sub DetectarTipoDeArquivoAberto()
+ 
+ On Error GoTo erro
+    ' Variável para armazenar o documento ativo
     Dim oDoc As Document
     Set oDoc = ThisApplication.ActiveDocument
     
+    ' Verificar o tipo de documento
     Select Case oDoc.DocumentType
         Case kPartDocumentObject
+            'MsgBox "O arquivo aberto é um Part (.ipt)"
             TipoArquivo = "ipt"
         Case kAssemblyDocumentObject
-            TipoArquivo = "iam"
+            'MsgBox "O arquivo aberto é um Assembly (.iam)"
+                TipoArquivo = "iam"
         Case kDrawingDocumentObject
-            TipoArquivo = "idw"
+            'MsgBox "O arquivo aberto é um Drawing (.idw)"
+                TipoArquivo = "idw"
         Case Else
-            TipoArquivo = ""
+            MsgBox "Tipo de documento desconhecido"
     End Select
-    
-    Exit Sub
 erro:
-    TipoArquivo = ""
+
 End Sub
 
+
 Sub Exportar_Arquivos()
-    Call UserForm1.Show
+Load UserForm1
+UserForm1.CommandButton1.Visible = False
+UserForm1.CommandButton2.Visible = False
+UserForm1.CommandButton3.Visible = False
+UserForm1.CommandButton6.Top = UserForm1.CommandButton2.Top
+UserForm1.CommandButton4.Top = UserForm1.CommandButton3.Top
+UserForm1.Show
 End Sub
 
 Sub ExportarParaDWG()
-    On Error GoTo ErrorHandler
-    
-    Dim oDoc As Document
-    Dim sArquivoOriginal As String
-    Dim sFormatosStr As String
-    Dim sDisplayNameDWG As String
-    
-    On Error Resume Next
-    Call UpdateUserForm1Label("Label4", "Enviando para servidor...")
-    Err.Clear
-    
-    On Error Resume Next
-    Set oDoc = ThisApplication.ActiveDocument
-    If Err.Number <> 0 Or oDoc Is Nothing Then
-        Err.Clear
-        MsgBox "Erro: Nenhum documento aberto", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    sArquivoOriginal = oDoc.FullFileName
-    If Err.Number <> 0 Or sArquivoOriginal = "" Then
-        Err.Clear
-        MsgBox "Por favor, salve o arquivo antes de enviar para o servidor.", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    sDisplayNameDWG = oDoc.DisplayName
-    If Err.Number <> 0 Or sDisplayNameDWG = "" Then
-        Err.Clear
-        sDisplayNameDWG = Mid(sArquivoOriginal, InStrRev(sArquivoOriginal, "\") + 1)
-    End If
-    Err.Clear
-    
-    sFormatosStr = "dwg"
-    
-    On Error GoTo ErrorHandler
-    
-    Call EnviarArquivoParaServidor(sArquivoOriginal, sDisplayNameDWG, "C:\GD_GEM\", sFormatosStr)
-    
-    On Error Resume Next
-    If ExpTodos = True Then
-        Call UpdateUserForm1Label("Label4", "Enviado...OK")
-        Call UpdateUserForm1Label("Label6", "Enviado")
-        Call UpdateUserForm1Label("Label7", "Arquivo enviado para servidor processar")
-    Else
-        Call UpdateUserForm1Label("Label4", "Enviado...OK")
-        MsgBox "Arquivo enviado para servidor. O servidor processara e exportara DWG.", vbInformation
-    End If
-    Err.Clear
-    
+    ' Desativado - exportacao gerenciada pelo servidor
     Exit Sub
     
-ErrorHandler:
-    MsgBox "Erro ao exportar DWG: " & Err.Description & " (Erro " & Err.Number & ")", vbExclamation
-    On Error Resume Next
-    Call UpdateUserForm1Label("Label4", "Erro")
-    Err.Clear
+    Dim oApp As Application
+    Dim oDoc As Document
+    Dim oDrawingDoc As DrawingDocument
+    Dim oTranslatorAddInDWG As TranslatorAddIn
+    Dim oTranslationContext As TranslationContext
+    Dim oOptions As NameValueMap
+    Dim oDataMedium As DataMedium
+    Dim sFolderPath As String
+    Dim sFileName As String
+    Dim sFilePath As String
+    Dim sOutputPath As String
+    
+    
+      UserForm1.Label4.Caption = "Gerando..."
+    ' Configurar a aplicação do Inventor
+    Set oApp = ThisApplication
+
+    ' Obter o documento ativo
+    Set oDoc = oApp.ActiveDocument
+    
+    ' Verificar se o documento ativo é um documento de desenho
+    If oDoc.DocumentType = kDrawingDocumentObject Then
+        Set oDrawingDoc = oDoc
+        
+        
+        ' Definir o caminho da pasta do documento ativo
+        sFolderPath = oDoc.FullFileName
+        sFolderPath = Left(sFolderPath, InStrRev(sFolderPath, "\"))
+
+        ' Definir o caminho de saída para os arquivos DWG
+        sOutputPath = "C:\GD_GEM\"
+        
+        ' Criar a pasta de saída se ela não existir
+        If Dir(sOutputPath, vbDirectory) = "" Then
+            MkDir sOutputPath
+        End If
+        
+        ' Definir o nome do arquivo DWG
+        sFileName = Left(oDoc.DisplayName, InStrRev(oDoc.DisplayName, ".") - 1) & ".dwg"
+        sFilePath = sOutputPath & sFileName
+        
+        ' Procurar o AddIn do DWG Translator
+        Dim addIn As ApplicationAddIn
+        Dim addInFound As Boolean
+        addInFound = False
+        For Each addIn In oApp.ApplicationAddIns
+        
+            If addIn.ClassIdString = "{C24E3AC4-122E-11D5-8E91-0010B541CD80}" Then ' Tentativa com ID padrão
+                Set oTranslatorAddInDWG = addIn
+                addInFound = True
+                Exit For
+            End If
+        Next addIn
+
+        If addInFound Then
+            ' Criar o contexto de tradução
+            Set oTranslationContext = oApp.TransientObjects.CreateTranslationContext
+            oTranslationContext.Type = kFileBrowseIOMechanism
+
+            ' Criar o objeto NameValueMap
+            Set oOptions = oApp.TransientObjects.CreateNameValueMap
+
+            ' Configurar opções específicas para a exportação de DWG, se necessário
+            ' Exemplo: oOptions.Value("Export_Acad_IniFile") = "C:\path\to\your\iniFile.ini"
+
+            ' Criar o objeto DataMedium
+            Set oDataMedium = oApp.TransientObjects.CreateDataMedium
+            oDataMedium.FileName = sFilePath
+
+            ' Exportar o DWG
+            Call oTranslatorAddInDWG.SaveCopyAs(oDrawingDoc, oTranslationContext, oOptions, oDataMedium)
+            
+            ' Notificar o usuário
+            If ExpTodos = True Then
+            UserForm1.Label4.Caption = "Gerando...OK"
+            UserForm1.Label6.Caption = "Finalizado"
+            UserForm1.Label7.Caption = "Arquivos DXF e CSV exportados com sucesso para C:\GD_GEM"
+            ExpTodos = False
+            Else
+            UserForm1.Label4.Caption = "Gerando...OK"
+            UserForm1.Label6.Caption = "Finalizado"
+            MsgBox "DWG exportado com sucesso para " & sFilePath
+            End If
+        Else
+            MsgBox "DWG Translator AddIn nao encontrado."
+        End If
+    Else
+        MsgBox "O documento ativo nao e um documento de desenho."
+    End If
+End Sub
+Sub ExportarParaDXF()
+    Dim oApp As Inventor.Application
+    Dim oDoc As Document
+    Dim oDrawingDoc As DrawingDocument
+    Dim oPartDoc As PartDocument
+    Dim oAssemblyDoc As AssemblyDocument
+    Dim oTranslatorAddIn As TranslatorAddIn
+    Dim oTranslationContext As TranslationContext
+    Dim oOptions As NameValueMap
+    Dim oDataMedium As DataMedium
+    Dim sFolderPath As String
+    Dim sFileName As String
+    Dim sFilePath As String
+    Dim sOutputPath As String
+    UserForm1.Label3.Caption = "Gerando..."
+    ' Set the Inventor application
+    Set oApp = ThisApplication
+
+    ' Get the active document
+    Set oDoc = oApp.ActiveDocument
+
+    ' Define the folder path of the active document
+    sFolderPath = oDoc.FullFileName
+    sFolderPath = Left(sFolderPath, InStrRev(sFolderPath, "\"))
+
+    ' Define the output path for DXFs
+    sOutputPath = "C:\GD_GEM\"
+    
+    ' Create the output folder if it doesn't exist
+    'If Dir(sOutputPath, vbDirectory) = "" Then
+       'MkDir sOutputPath
+    'End If
+
+    ' Define the DXF file name
+    sFileName = Left(oDoc.DisplayName, InStrRev(oDoc.DisplayName, ".") - 1) & ".dxf"
+    sFilePath = sOutputPath & sFileName
+
+    ' Get the DXF Translator AddIn
+    Set oTranslatorAddIn = oApp.ApplicationAddIns.ItemById("{C24E3AC4-122E-11D5-8E91-0010B541CD80}") ' Inventor DXF translator ID
+
+    ' Create the translation context
+    Set oTranslationContext = oApp.TransientObjects.CreateTranslationContext
+    oTranslationContext.Type = kFileBrowseIOMechanism
+
+    ' Create NameValueMap object
+    Set oOptions = oApp.TransientObjects.CreateNameValueMap
+
+    ' Create DataMedium object
+    Set oDataMedium = oApp.TransientObjects.CreateDataMedium
+    oDataMedium.FileName = sFilePath
+
+    ' Check the document type and export accordingly
+    If oDoc.DocumentType = kDrawingDocumentObject Then
+        ' If the active document is a drawing document
+        Set oDrawingDoc = oDoc
+        ' Export the DXF
+        Call oTranslatorAddIn.SaveCopyAs(oDrawingDoc, oTranslationContext, oOptions, oDataMedium)
+        ' Notify the user
+            If ExpTodos = True Then
+            UserForm1.Label3.Caption = "Gerando...OK"
+            Else
+            UserForm1.Label3.Caption = "Gerando...OK"
+            MsgBox "DXF do desenho exportado com sucesso para " & sFilePath
+            End If
+    ElseIf oDoc.DocumentType = kAssemblyDocumentObject Then
+        ' If the active document is an assembly document
+        Set oAssemblyDoc = oDoc
+        ' Export the DXF
+        Call oTranslatorAddIn.SaveCopyAs(oDoc, oTranslationContext, oOptions, oDataMedium)
+        ' Notify the user
+        UserForm1.Label3.Caption = "Gerando...OK"
+        MsgBox "DXF da montagem exportado com sucesso para " & sFilePath
+        
+    ElseIf oDoc.DocumentType = kPartDocumentObject Then
+        ' If the active document is a part document
+        Set oPartDoc = oDoc
+        ' Export the DXF
+        Call oTranslatorAddIn.SaveCopyAs(oDoc, oTranslationContext, oOptions, oDataMedium)
+        ' Notify the user
+        
+        If ExpTodos = True Then
+        UserForm1.Label3.Caption = "Gerando...OK"
+        MsgBox "DXF da peca exportado com sucesso para " & sFilePath
+        Else
+        UserForm1.Label3.Caption = "Gerando...OK"
+        End If
+        
+    Else
+        MsgBox "O documento ativo nao e um documento de desenho, montagem ou peca."
+    End If
 End Sub
 
-Sub ExportarParaDXF()
-    On Error GoTo ErrorHandler
+Sub ExportarParaPDF()
+    ' Desativado - exportacao gerenciada pelo servidor
+    Exit Sub
     
     Dim oApp As Inventor.Application
     Dim oDoc As Document
@@ -315,341 +242,319 @@ Sub ExportarParaDXF()
     Dim oTranslationContext As TranslationContext
     Dim oOptions As NameValueMap
     Dim oDataMedium As DataMedium
-    Dim sOutputPath As String
-    Dim sFileName As String
-    
-    Set oApp = ThisApplication
-    Set oDoc = ThisApplication.ActiveDocument
-    
-    If oDoc Is Nothing Then
-        MsgBox "Erro: Nenhum documento aberto", vbExclamation
-        Exit Sub
-    End If
-    
-    If oDoc.FullFileName = "" Then
-        MsgBox "Por favor, salve o arquivo antes de exportar.", vbExclamation
-        Exit Sub
-    End If
-    
-    sFileName = Left(oDoc.DisplayName, InStrRev(oDoc.DisplayName, ".") - 1)
-    sOutputPath = "C:\GD_GEM\" & sFileName & ".dxf"
-    
-    Set oTranslatorAddIn = oApp.ApplicationAddIns.ItemById("{C24E3AC2-122E-11D5-8E3B-0010B541CD80}")
-    
-    If oTranslatorAddIn Is Nothing Then
-        On Error GoTo ErrorHandler
-        MsgBox "Erro: AddIn de traducao DWG nao encontrado", vbExclamation
-        Exit Sub
-    End If
-    On Error GoTo ErrorHandler
-    
-    Set oTranslationContext = oApp.TransientObjects.CreateTranslationContext
-    If oTranslationContext Is Nothing Then
-        MsgBox "Erro: Nao foi possivel criar contexto de traducao", vbExclamation
-        Exit Sub
-    End If
-    
-    oTranslationContext.Type = kFileBrowseIOMechanism
-    Set oOptions = oApp.TransientObjects.CreateNameValueMap
-    Set oDataMedium = oApp.TransientObjects.CreateDataMedium
-    
-    oDataMedium.FileName = sOutputPath
-    
-    If oDoc.DocumentType = kDrawingDocumentObject Then
-        Set oDrawingDoc = oDoc
-        oTranslatorAddIn.SaveCopyAs(oDrawingDoc, oTranslationContext, oOptions, oDataMedium)
-    ElseIf oDoc.DocumentType = kPartDocumentObject Then
-        Set oPartDoc = oDoc
-        oTranslatorAddIn.SaveCopyAs(oPartDoc, oTranslationContext, oOptions, oDataMedium)
-    ElseIf oDoc.DocumentType = kAssemblyDocumentObject Then
-        Set oAssemblyDoc = oDoc
-        oTranslatorAddIn.SaveCopyAs(oAssemblyDoc, oTranslationContext, oOptions, oDataMedium)
-    End If
-    
-    Call UpdateUserForm1Label("Label3", "Enviado...OK")
-    MsgBox "Arquivo DXF exportado com sucesso para: " & sOutputPath, vbInformation
-    
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Erro ao exportar DXF: " & Err.Description & " (Erro " & Err.Number & ")", vbExclamation
-    Call UpdateUserForm1Label("Label3", "Erro")
-End Sub
-
-Sub ExportarParaPDF()
-    On Error GoTo ErrorHandler
-    
-    Dim oDoc As Document
-    Dim sArquivoOriginal As String
-    Dim sFormatosStr As String
-    Dim sDisplayName As String
-    
-    On Error Resume Next
-    Call UpdateUserForm1Label("Label2", "Enviando para servidor...")
-    Err.Clear
-    
-    On Error Resume Next
-    Set oDoc = ThisApplication.ActiveDocument
-    If Err.Number <> 0 Or oDoc Is Nothing Then
-        Err.Clear
-        MsgBox "Erro: Nenhum documento aberto", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    sArquivoOriginal = oDoc.FullFileName
-    If Err.Number <> 0 Or sArquivoOriginal = "" Then
-        Err.Clear
-        MsgBox "Por favor, salve o arquivo antes de enviar para o servidor.", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    sDisplayName = oDoc.DisplayName
-    If Err.Number <> 0 Or sDisplayName = "" Then
-        Err.Clear
-        sDisplayName = Mid(sArquivoOriginal, InStrRev(sArquivoOriginal, "\") + 1)
-    End If
-    Err.Clear
-    
-    sFormatosStr = "pdf"
-    
-    On Error GoTo ErrorHandler
-    
-    Call EnviarArquivoParaServidor(sArquivoOriginal, sDisplayName, "C:\GD_GEM\", sFormatosStr)
-    
-    On Error Resume Next
-    Call UpdateUserForm1Label("Label2", "Enviado...OK")
-    Err.Clear
-    
-    If ExpTodos = False Then
-        MsgBox "Arquivo enviado para servidor. O servidor processara e exportara PDF.", vbInformation
-    End If
-    
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Erro ao exportar PDF: " & Err.Description & " (Erro " & Err.Number & ")", vbExclamation
-    On Error Resume Next
-    Call UpdateUserForm1Label("Label2", "Erro")
-    Err.Clear
-End Sub
-
-Public Sub WriteSheetMetalDXF()
-    On Error GoTo ErrorHandler
-    
-    If TipoArquivo = "ipt" Then
-        Dim sFolderPath As String
-        Dim sFileName As String
-        Dim sFilePath As String
-        Dim sOutputPath As String
-        Dim oDoc As PartDocument
-        Set oDoc = ThisApplication.ActiveDocument
-        
-        If oDoc Is Nothing Then
-            MsgBox "Erro: Nenhum documento aberto", vbExclamation
-            Exit Sub
-        End If
-        
-        sFileName = Left(oDoc.DisplayName, InStrRev(oDoc.DisplayName, ".") - 1)
-        sFolderPath = "C:\GD_GEM\"
-        sFilePath = oDoc.FullFileName
-        sOutputPath = sFolderPath & sFileName & "_Chapa_DXF.dxf"
-        
-        Dim oFlatPattern As FlatPattern
-        Set oFlatPattern = oDoc.ComponentDefinition.SheetMetal.FlatPattern
-        
-        If oFlatPattern Is Nothing Then
-            MsgBox "Erro: Nao foi possivel obter o padrao plano da chapa", vbExclamation
-            Exit Sub
-        End If
-        
-        oFlatPattern.ExportFlatPattern(sOutputPath)
-        
-        Call UpdateUserForm1Label("Label3", "Enviado...OK")
-        MsgBox "DXF de chapa planificada exportado com sucesso para: " & sOutputPath, vbInformation
-    End If
-    
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Erro ao exportar DXF de chapa: " & Err.Description & " (Erro " & Err.Number & ")", vbExclamation
-    Call UpdateUserForm1Label("Label3", "Erro")
-End Sub
-
-Sub ExportPartsListToCSV()
-    On Error GoTo ErrorHandler
-    
     Dim sFolderPath As String
     Dim sFileName As String
     Dim sFilePath As String
     Dim sOutputPath As String
-    
-    Call UpdateUserForm1Label("Label5", "Gerando...")
-    
+    UserForm1.Label2.Caption = "Gerando..."
+    ' Set the Inventor application
+    Set oApp = ThisApplication
+
+    ' Get the active document
+    Set oDoc = oApp.ActiveDocument
+
+    ' Define the folder path of the active document
+    sFolderPath = oDoc.FullFileName
+    sFolderPath = Left(sFolderPath, InStrRev(sFolderPath, "\"))
+
+    ' Define the output path for PDFs
+   ' sOutputPath = sFolderPath & "PDFs\"
+    sOutputPath = "C:\GD_GEM\"
+    ' Create the output folder if it doesn't exist
+    'If Dir(sOutputPath, vbDirectory) = "" Then
+      '  MkDir sOutputPath
+    'End If
+
+    ' Define the PDF file name
+    sFileName = Left(oDoc.DisplayName, InStrRev(oDoc.DisplayName, ".") - 1) & ".pdf"
+    sFilePath = sOutputPath & sFileName
+
+    ' Get the PDF Translator AddIn
+    Set oTranslatorAddIn = oApp.ApplicationAddIns.ItemById("{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}")
+
+    ' Create the translation context
+    Set oTranslationContext = oApp.TransientObjects.CreateTranslationContext
+    oTranslationContext.Type = kFileBrowseIOMechanism
+
+    ' Create NameValueMap object
+    Set oOptions = oApp.TransientObjects.CreateNameValueMap
+
+    ' Create DataMedium object
+    Set oDataMedium = oApp.TransientObjects.CreateDataMedium
+    oDataMedium.FileName = sFilePath
+
+    ' Check the document type and export accordingly
+    If oDoc.DocumentType = kDrawingDocumentObject Then
+        ' If the active document is a drawing document
+        Set oDrawingDoc = oDoc
+        ' Export the PDF
+        Call oTranslatorAddIn.SaveCopyAs(oDrawingDoc, oTranslationContext, oOptions, oDataMedium)
+        ' Notify the user
+        
+        If ExpTodos = True Then
+        UserForm1.Label2.Caption = "Gerando...OK"
+        Else
+        UserForm1.Label2.Caption = "Gerando...OK"
+        MsgBox "PDF do desenho exportado com sucesso para " & sFilePath
+        End If
+        
+    ElseIf oDoc.DocumentType = kAssemblyDocumentObject Then
+        ' If the active document is an assembly document
+        Set oAssemblyDoc = oDoc
+        ' Zoom extend for assembly
+        oApp.CommandManager.ControlDefinitions.Item("AppZoomAllCmd").Execute
+        ' Export the PDF
+        Call oTranslatorAddIn.SaveCopyAs(oDoc, oTranslationContext, oOptions, oDataMedium)
+        ' Notify the user
+        If ExpTodos = True Then
+        UserForm1.Label2.Caption = "Gerando...OK"
+        MsgBox "PDF do desenho exportado com sucesso para " & sFilePath
+        Else
+        UserForm1.Label2.Caption = "Gerando...OK"
+        End If
+    ElseIf oDoc.DocumentType = kPartDocumentObject Then
+        ' If the active document is a part document
+        Set oPartDoc = oDoc
+        ' Zoom extend for part
+        oApp.CommandManager.ControlDefinitions.Item("AppZoomAllCmd").Execute
+        ' Export the PDF
+        Call oTranslatorAddIn.SaveCopyAs(oDoc, oTranslationContext, oOptions, oDataMedium)
+        ' Notify the user
+        
+        If ExpTodos = True Then
+        UserForm1.Label2.Caption = "Gerando...OK"
+        MsgBox "PDF da peca exportado com sucesso para " & sFilePath
+        Else
+        UserForm1.Label2.Caption = "Gerando...OK"
+        End If
+        
+    Else
+        MsgBox "O documento ativo nao e um documento de desenho, montagem ou peca."
+    End If
+End Sub
+
+Public Sub WriteSheetMetalDXF()
+        If TipoArquivo = "ipt" Then
+            Dim sFolderPath As String
+            Dim sFileName As String
+            Dim sFilePath As String
+            Dim sOutputPath As String
+            ' Get the active document.  This assumes it is a part document.
+            Dim oDoc As PartDocument
+            Set oDoc = ThisApplication.ActiveDocument
+            UserForm1.Label3.Caption = "Gerando..."
+            sFolderPath = oDoc.FullFileName
+            sFolderPath = Left(sFolderPath, InStrRev(sFolderPath, "\"))
+             sFileName = Left(oDoc.DisplayName, InStrRev(oDoc.DisplayName, ".") - 1) & ".dxf"
+            
+             sOutputPath = "C:\GD_GEM\"
+             'sFilePath = sOutputPath & sFileName
+             sFilePath = sOutputPath & sFileName
+             
+        
+            ' Get the DataIO object.
+            Dim oDataIO As DataIO
+            Set oDataIO = oDoc.ComponentDefinition.DataIO
+        
+            ' Build the string that defines the format of the DXF file.
+            'Codigo com Parametros
+            'Funcionando 21/07/2024
+            'sOut = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=Outer&TrimCenterlinesAtContour=True&BendUpLayerColor=0;0;255&BendDownLayerColor=255;0;0&InteriorProfilesLayer=IV_MARK_THROUGH&InteriorProfilesLayerColor=255;255;255&InvisibleLayers=IV_TANGENT;IV_TOOL_CENTER;IV_TOOL_CENTER_DOWN;IV_ARC_CENTERS;IV_FEATURE_PROFILES;IV_FEATURE_PROFILES_DOWN"
+            'Fucionando 09/12/2024
+            'sOut = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=Outer&TrimCenterlinesAtContour=True&BendUpLayerColor=0;0;255&BendDownLayerColor=255;0;0&FeatureProfilesLayerColor=0;0;255&InteriorProfilesLayer=IV_MARK_THROUGH&InteriorProfilesLayerColor=255;255;255&InvisibleLayers=IV_TANGENT;IV_TOOL_CENTER;IV_TOOL_CENTER_DOWN;IV_ARC_CENTERS"
+            'Fucionando 30/04/2025
+            'sOut = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=Outer&TrimCenterlinesAtContour=True&BendUpLayerColor=0;0;255&BendDownLayerColor=255;0;0&FeatureProfilesUpLayerColor=0;0;255&InteriorProfilesLayer=IV_MARK_THROUGH&InteriorProfilesLayerColor=255;255;255&InvisibleLayers=IV_TANGENT;IV_TOOL_CENTER;IV_TOOL_CENTER_DOWN;IV_ARC_CENTERS;IV_FEATURE_PROFILES_DOWN"
+            'Alteração 20/05/2025
+            'sOut = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=Outer&TrimCenterlinesAtContour=True&BendUpLayerColor=0;0;255&BendDownLayerColor=255;0;0&FeatureProfilesUpLayerColor=0;0;255&InteriorProfilesLayer=IV_MARK_THROUGH;IV_MARK_SURFACE_BACK&InteriorProfilesLayerColor=255;255;255&InvisibleLayers=IV_TANGENT;IV_TOOL_CENTER;IV_TOOL_CENTER_DOWN;IV_ARC_CENTERS;IV_FEATURE_PROFILES_DOWN;IV_UNCONSUMED_SKETCHES;IV_UNCONSUMED_SKETCH_CONSTRUCTION"
+            
+            
+            Dim sOut As String
+                        
+            sOut = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=Outer&TrimCenterlinesAtContour=True&BendUpLayerColor=0;0;255&BendDownLayerColor=255;0;0&FeatureProfilesUpLayerColor=0;0;255&InteriorProfilesLayer=IV_MARK_THROUGH&InteriorProfilesLayerColor=255;255;255&InvisibleLayers=IV_TANGENT;IV_TOOL_CENTER;IV_TOOL_CENTER_DOWN;IV_ARC_CENTERS;IV_FEATURE_PROFILES_DOWN;IV_UNCONSUMED_SKETCHES;IV_UNCONSUMED_SKETCH_CONSTRUCTION&AltRepFrontLayer=IV_MARK_SURFACE&AltRepFrontLayerColor=0;0;255&AltRepFrontLayerLineType=37634&AltRepBackLayer=IV_MARK_SURFACE_BACK&AltRepBackLayerColor=255;0;0&AltRepBackLayerLineType=37634"
+            
+            ' Create the DXF file.
+            oDataIO.WriteDataToFile sOut, sFilePath
+            
+            If ExpTodos = True Then
+            UserForm1.Label3.Caption = "Gerando...OK"
+            Else
+             UserForm1.Label3.Caption = "Gerando...OK"
+            MsgBox "DXF da peca exportado com sucesso com definicoes do Flat Pattern para " & sFilePath
+            End If
+            
+        Else
+        
+        If ExpTodos = True Then
+         UserForm1.Label3.Caption = "Gerando...OK"
+        Else
+         UserForm1.Label3.Caption = "Gerando...OK"
+        MsgBox "Este arquivo e um " & "." & TipoArquivo & " a exportacao DXF e para peca planificada formato .ipt"
+        End If
+        
+    End If
+        
+End Sub
+Sub ExportPartsListToCSV()
+    Dim sFolderPath As String
+    Dim sFileName As String
+    Dim sFilePath As String
+    Dim sOutputPath As String
+    UserForm1.Label5.Caption = "Gerando..."
+    ' Definir uma referência ao documento de desenho ativo.
     Dim oDrawDoc As DrawingDocument
     Set oDrawDoc = ThisApplication.ActiveDocument
     
-    If oDrawDoc Is Nothing Or oDrawDoc.DocumentType <> kDrawingDocumentObject Then
-        MsgBox "Erro: Abra um desenho (.idw) para exportar a lista de pecas", vbExclamation
+    ' Verificar se o documento ativo é um documento de desenho.
+    If Not oDrawDoc.DocumentType = kDrawingDocumentObject Then
+        MsgBox "Este codigo deve ser executado em um documento de desenho do Inventor.", vbExclamation
         Exit Sub
     End If
     
-    On Error Resume Next
-    sFileName = Left(oDrawDoc.DisplayName, InStrRev(oDrawDoc.DisplayName, ".") - 1)
-    If Err.Number <> 0 Or sFileName = "" Then
-        Err.Clear
-        sFileName = "Desenho"
-    End If
-    Err.Clear
+    ' Obter o caminho da pasta do documento de desenho ativo.
+    sFolderPath = oDrawDoc.FullFileName
+    sFolderPath = Left(sFolderPath, InStrRev(sFolderPath, "\"))
     
-    sFolderPath = "C:\GD_GEM\"
-    sFilePath = oDrawDoc.FullFileName
-    sOutputPath = sFolderPath & sFileName & ".csv"
+    ' Definir o nome do arquivo CSV com base no nome do documento de desenho.
+    sFileName = Left(oDrawDoc.DisplayName, InStrRev(oDrawDoc.DisplayName, ".") - 1) & ".csv"
+    sOutputPath = "C:\GD_GEM\"  ' Caminho onde o arquivo CSV será salvo
+    sFilePath = sOutputPath & sFileName
     
-    On Error Resume Next
-    Dim oActiveSheet As Sheet
-    Set oActiveSheet = oDrawDoc.ActiveSheet
-    If Err.Number <> 0 Or oActiveSheet Is Nothing Then
-        Err.Clear
-        MsgBox "Erro: Nao foi possivel acessar a folha ativa do desenho", vbExclamation
+    ' Verificar se há alguma lista de peças na folha ativa.
+    If oDrawDoc.ActiveSheet.PartsLists.Count = 0 Then
+        MsgBox "Nenhuma lista de pecas encontrada na folha ativa.", vbExclamation
         Exit Sub
     End If
-    Err.Clear
     
-    On Error Resume Next
-    Dim oPartsLists As PartsLists
-    Set oPartsLists = oActiveSheet.PartsLists
-    If Err.Number <> 0 Or oPartsLists Is Nothing Then
-        Err.Clear
-        MsgBox "Erro: Nao foi possivel acessar a lista de pecas. Verifique se ha uma lista de pecas no desenho.", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    Dim iPartsListCount As Integer
-    iPartsListCount = oPartsLists.Count
-    If Err.Number <> 0 Or iPartsListCount = 0 Then
-        Err.Clear
-        MsgBox "Erro: Nao ha listas de pecas no desenho", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
+    ' Definir uma referência à primeira lista de peças na folha ativa.
     Dim oPartList As PartsList
-    Set oPartList = oPartsLists.Item(1)
-    If Err.Number <> 0 Or oPartList Is Nothing Then
-        Err.Clear
-        MsgBox "Erro: Nao foi possivel acessar a primeira lista de pecas", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
+    Set oPartList = oDrawDoc.ActiveSheet.PartsLists.Item(1)
     
-    On Error Resume Next
-    Dim iRowsCount As Integer
-    iRowsCount = oPartList.PartsListRows.Count
-    If Err.Number <> 0 Or iRowsCount = 0 Then
-        Err.Clear
-        MsgBox "Erro: A lista de pecas esta vazia", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
+    ' Caminho do arquivo CSV a ser criado.
     Dim filePath As String
-    filePath = sOutputPath
+    filePath = sFilePath
+    
+    ' Criar e abrir um arquivo de texto para escrita.
     Dim fileNumber As Integer
     fileNumber = FreeFile
     Open filePath For Output As #fileNumber
     
-    Dim oRow As PartsListRow
-    Dim i As Integer
-    For i = 1 To iRowsCount
-        On Error Resume Next
-        If i >= 1 And i <= iRowsCount Then
-            Set oRow = oPartList.PartsListRows.Item(i)
-            If Err.Number = 0 And Not oRow Is Nothing Then
-                On Error Resume Next
-                Dim sPartNumber As String
-                Dim sQuantity As String
-                Dim sDescription As String
-                sPartNumber = oRow.PartNumber
-                If Err.Number <> 0 Then sPartNumber = ""
-                Err.Clear
-                sQuantity = CStr(oRow.Quantity)
-                If Err.Number <> 0 Then sQuantity = ""
-                Err.Clear
-                sDescription = oRow.Description
-                If Err.Number <> 0 Then sDescription = ""
-                Err.Clear
-                Print #fileNumber, sPartNumber & "," & sQuantity & "," & sDescription
-            End If
-            Err.Clear
+    ' Escrever a linha de cabeçalho.
+    Dim header As String
+    Dim j As Long
+    For j = 1 To oPartList.PartsListColumns.Count
+        header = header & oPartList.PartsListColumns.Item(j).Title
+        If j < oPartList.PartsListColumns.Count Then
+            header = header & ";"
         End If
-        Err.Clear
-    Next
+    Next j
+    Print #fileNumber, header
     
+    ' Iterar através do conteúdo da lista de peças.
+    Dim i As Long
+    For i = 1 To oPartList.PartsListRows.Count
+        ' Obter a linha atual.
+        Dim oRow As PartsListRow
+        Set oRow = oPartList.PartsListRows.Item(i)
+        
+        ' Preparar os dados da linha.
+        Dim rowData As String
+        rowData = ""  ' Inicializar a variável rowData
+        
+        For j = 1 To oPartList.PartsListColumns.Count
+            ' Obter a célula atual.
+            Dim oCell As PartsListCell
+            Set oCell = oRow.Item(j)
+            
+            ' Adicionar valor da célula aos dados da linha.
+            rowData = rowData & oCell.Value
+            If j < oPartList.PartsListColumns.Count Then
+                rowData = rowData & ";"
+            End If
+        Next j
+        
+        ' Escrever os dados da linha no arquivo CSV.
+        Print #fileNumber, rowData
+    Next i
+    
+    ' Fechar o arquivo.
     Close #fileNumber
-    
-    Call UpdateUserForm1Label("Label5", "Enviado...OK")
-    MsgBox "Lista de pecas exportada com sucesso para: " & sOutputPath, vbInformation
-    
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Erro ao exportar CSV: " & Err.Description & " (Erro " & Err.Number & ")", vbExclamation
-    Call UpdateUserForm1Label("Label5", "Erro")
+    If ExpTodos = True Then
+    UserForm1.Label5.Caption = "Gerando...OK"
+    Else
+    UserForm1.Label5.Caption = "Gerando...OK"
+    MsgBox "Lista de pecas exportada com sucesso para " & filePath, vbInformation
+    End If
 End Sub
 
 Sub ExportarIDWtoDWF()
-    On Error GoTo ErrorHandler
-    
-    Dim oDoc As Document
-    Dim sArquivoOriginal As String
-    Dim sFormatosStr As String
-    Dim sDisplayNameDWF As String
-    
-    On Error Resume Next
-    Set oDoc = ThisApplication.ActiveDocument
-    If Err.Number <> 0 Or oDoc Is Nothing Then
-        Err.Clear
-        MsgBox "Nenhum documento aberto.", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    sArquivoOriginal = oDoc.FullFileName
-    If Err.Number <> 0 Or sArquivoOriginal = "" Then
-        Err.Clear
-        MsgBox "Por favor, salve o arquivo antes de enviar para o servidor.", vbExclamation
-        Exit Sub
-    End If
-    Err.Clear
-    
-    On Error Resume Next
-    sDisplayNameDWF = oDoc.DisplayName
-    If Err.Number <> 0 Or sDisplayNameDWF = "" Then
-        Err.Clear
-        sDisplayNameDWF = Mid(sArquivoOriginal, InStrRev(sArquivoOriginal, "\") + 1)
-    End If
-    Err.Clear
-    
-    sFormatosStr = "dwf"
-    
-    On Error GoTo ErrorHandler
-    
-    Call EnviarArquivoParaServidor(sArquivoOriginal, sDisplayNameDWF, "C:\GD_GEM\", sFormatosStr)
-    
-    If ExpTodos = False Then
-        MsgBox "Arquivo enviado para servidor. O servidor processara e exportara DWF.", vbInformation
-    End If
-    
+    ' Desativado - exportacao gerenciada pelo servidor
     Exit Sub
     
-ErrorHandler:
-    MsgBox "Erro ao exportar DWF: " & Err.Description & " (Erro " & Err.Number & ")", vbExclamation
+    ' Declaração das variáveis
+    Dim oApp As Application
+    Dim oDoc As DrawingDocument
+    Dim oDWFAddIn As TranslatorAddIn
+    Dim oContext As TranslationContext
+    Dim oOptions As NameValueMap
+    Dim oDataMedium As DataMedium
+    Dim strFileName As String
+    Dim strFilePath As String
+    
+    ' Obter a aplicação ativa
+    Set oApp = ThisApplication
+    
+    ' Obter o documento IDW ativo
+    On Error Resume Next
+    Set oDoc = oApp.ActiveDocument
+    On Error GoTo 0
+    
+    
+    
+    ' Verificar se o documento ativo é um desenho (IDW)
+    If Not oDoc Is Nothing Then
+        If oDoc.DocumentType = kDrawingDocumentObject Then
+            ' Obter o nome do arquivo sem a extensão
+            strFileName = Left(oDoc.DisplayName, InStrRev(oDoc.DisplayName, ".") - 1)
+            
+            ' Definir o caminho de salvamento para C:\temp\ com o mesmo nome do arquivo original
+            strFilePath = "C:\GD_GEM\" & strFileName & ".dwf"
+            
+            ' Obter o add-in de exportação para DWF
+            Set oDWFAddIn = oApp.ApplicationAddIns.ItemById("{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}")
+            
+            ' Verificar se o add-in está carregado
+            If Not oDWFAddIn Is Nothing Then
+                ' Criar um contexto de tradução
+                Set oContext = oApp.TransientObjects.CreateTranslationContext
+                oContext.Type = kFileBrowseIOMechanism
+                
+                ' Criar um NameValueMap para as opções de exportação
+                Set oOptions = oApp.TransientObjects.CreateNameValueMap
+                
+                ' Configurar opções para garantir fundo branco e modo completo
+                oOptions.Value("PublishMode") = kCompleteDWFPublish ' Modo completo
+                oOptions.Value("SheetBackground") = False  ' Desativa o fundo para ter fundo branco
+                
+                ' Criar um DataMedium para especificar o arquivo de saída
+                Set oDataMedium = oApp.TransientObjects.CreateDataMedium
+                oDataMedium.FileName = strFilePath
+                
+                ' Exportar o documento para DWF
+                oDWFAddIn.SaveCopyAs oDoc, oContext, oOptions, oDataMedium
+                If ExpTodos = True Then
+               
+                Else
+                 MsgBox "Exportacao concluida com sucesso! Arquivo salvo em: " & strFilePath
+                End If
+                
+            Else
+                MsgBox "O add-in de exportacao DWF nao esta disponivel."
+            End If
+        Else
+            MsgBox "O documento ativo nao e um arquivo de desenho (IDW)."
+        End If
+    Else
+        MsgBox "Geracao de Arquivos somente do Arquivo .IDW"
+    End If
 End Sub
+

@@ -1,29 +1,6 @@
 Attribute VB_Name = "Module8"
-Option Explicit
-
 Global FirstLevelOnly As Boolean
 Global Lin As Integer
-
-' ============================================================
-' Funcao Auxiliar para UserForm2
-' ============================================================
-Private Function IsUserForm2Loaded() As Boolean
-    On Error Resume Next
-    Dim test As String
-    test = UserForm2.Caption
-    IsUserForm2Loaded = (Err.Number = 0)
-    On Error GoTo 0
-End Function
-
-Private Sub SafeAddItemToListBox(item As String, quantity As String, partNumber As String, description As String, rowIndex As Integer)
-    On Error Resume Next
-    UserForm2.ListBox1.AddItem
-    UserForm2.ListBox1.List(rowIndex, 0) = item
-    UserForm2.ListBox1.List(rowIndex, 1) = quantity
-    UserForm2.ListBox1.List(rowIndex, 2) = partNumber
-    UserForm2.ListBox1.List(rowIndex, 3) = description
-    On Error GoTo 0
-End Sub
 
 Public Sub BOMQuery()
 If TipoArquivo <> "iam" Then MsgBox "Gera somente de arquivo .iam aberto": Exit Sub
@@ -57,12 +34,12 @@ If TipoArquivo <> "iam" Then MsgBox "Gera somente de arquivo .iam aberto": Exit 
     'Set a reference to the "Structured" BOMView
     Dim oBOMView As bomView
     Set oBOMView = oBOM.BOMViews.Item("Structured")
-    
-    ' Inicializar Lin para comecar do indice 1 (0 e o cabecalho)
-    Lin = 1
-    
-    ' Atualizar UserForm2 se estiver carregado
-    Call SafeAddItemToListBox("Item", "Quantity", "Part Number", "Description", 0)
+    UserForm2.ListBox1.AddItem
+   
+    UserForm2.ListBox1.List(0, 0) = "Item"
+    UserForm2.ListBox1.List(0, 1) = "Quantity"
+    UserForm2.ListBox1.List(0, 2) = "Part Number"
+    UserForm2.ListBox1.List(0, 3) = "Description"
   
     
     Debug.Print "Item"; Tab(15); "Quantity"; Tab(30); "Part Number"; Tab(70); "Description"
@@ -104,11 +81,13 @@ Private Sub QueryBOMRowProperties(oBOMRows As BOMRowsEnumerator, ItemTab As Long
 
             Debug.Print Tab(ItemTab); oRow.ItemNumber; Tab(17); oRow.itemQuantity; Tab(30); _
                 oPartNumProperty.Value; Tab(70); oDescripProperty.Value
-            
-            ' Atualizar UserForm2 se estiver carregado
-            Call SafeAddItemToListBox(CStr(oRow.ItemNumber), CStr(oRow.itemQuantity), _
-                CStr(oPartNumProperty.Value), CStr(oDescripProperty.Value), Lin)
-            Lin = Lin + 1
+                UserForm2.ListBox1.AddItem
+               Lin = 1
+                UserForm2.ListBox1.List(Lin, 0) = oRow.ItemNumber
+            UserForm2.ListBox1.List(Lin, 1) = oRow.itemQuantity
+            UserForm2.ListBox1.List(Lin, 2) = oPartNumProperty.Value
+            UserForm2.ListBox1.List(Lin, 3) = oDescripProperty.Value
+             Lin = Lin + 1
         Else
            
             'Get the file property that contains the "Part Number"
@@ -121,9 +100,11 @@ Private Sub QueryBOMRowProperties(oBOMRows As BOMRowsEnumerator, ItemTab As Long
             Set oDescripProperty = oCompDef.Document.PropertySets _
                 .Item("Design Tracking Properties").Item("Description")
          
-            ' Atualizar UserForm2 se estiver carregado
-            Call SafeAddItemToListBox(CStr(oRow.ItemNumber), CStr(oRow.itemQuantity), _
-                CStr(oPartNumProperty.Value), CStr(oDescripProperty.Value), Lin)
+              UserForm2.ListBox1.AddItem
+                UserForm2.ListBox1.List(Lin, 0) = oRow.ItemNumber
+            UserForm2.ListBox1.List(Lin, 1) = oRow.itemQuantity
+            UserForm2.ListBox1.List(Lin, 2) = oPartNumProperty.Value
+            UserForm2.ListBox1.List(Lin, 3) = oDescripProperty.Value
             Lin = Lin + 1
                     
             Debug.Print Tab(ItemTab); oRow.ItemNumber; Tab(17); oRow.itemQuantity; Tab(30); _

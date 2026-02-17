@@ -15,7 +15,9 @@ import data.DatabaseDriverFactory
 import data.DesenhoRepository
 import data.RealtimeClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import model.DesenhoAutodesk
 import model.DesenhoStatus
@@ -41,6 +43,7 @@ private fun initializeSqlite(repository: DesenhoRepository) {
 /**
  * App principal com dados do SQLite
  */
+@OptIn(FlowPreview::class)
 @Composable
 fun App(databaseDriverFactory: DatabaseDriverFactory) {
     val darkColorPalette = darkColors(
@@ -65,7 +68,12 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
     DisposableEffect(realtimeClient) {
         if (realtimeClient != null && serverBaseUrl != null) {
             logToFile("INFO", "Gem exportador (desktop) iniciado; servidor=$serverBaseUrl")
-            val job = kotlinx.coroutines.CoroutineScope(Dispatchers.Default).launch {
+            val exHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+                logToFile("ERROR", "Excecao na coroutine do WebSocket: ${throwable.message}")
+            }
+            val job = kotlinx.coroutines.CoroutineScope(
+                Dispatchers.Default + kotlinx.coroutines.SupervisorJob() + exHandler
+            ).launch {
                 realtimeClient.connect()
             }
             onDispose {
@@ -86,7 +94,11 @@ fun App(databaseDriverFactory: DatabaseDriverFactory) {
     }
 
     // Estado dos desenhos (observando do banco local; atualiza sozinho quando WebSocket envia INSERT/UPDATE)
-    val desenhos by repository.observeAll().collectAsState(initial = emptyList())
+    // Debounce de 250ms para evitar rajadas de recomposicao quando muitas mensagens WebSocket chegam juntas
+    val desenhos by remember {
+        repository.observeAll()
+            .debounce(250L)
+    }.collectAsState(initial = emptyList())
 
     val scope = rememberCoroutineScope()
     

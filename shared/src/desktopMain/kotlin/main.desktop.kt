@@ -48,7 +48,10 @@ actual suspend fun performUpdate(version: VersionInfo, onStateChange: (UpdateSta
             onStateChange(UpdateState.Error("Falha ao iniciar instalador"))
         }
     } catch (e: Exception) {
-        onStateChange(UpdateState.Error(e.message ?: "Erro desconhecido"))
+        val msg = e.message?.takeIf { it.isNotBlank() }
+            ?: "Erro inesperado durante atualizacao (${e::class.simpleName})"
+        util.logToFile("ERROR", "performUpdate falhou: $msg\n${e.stackTraceToString().take(1500)}")
+        onStateChange(UpdateState.Error(msg))
     }
 }
 

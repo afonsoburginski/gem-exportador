@@ -28,7 +28,18 @@ import com.sun.jna.platform.win32.WinDef
 import com.sun.jna.ptr.IntByReference
 
 fun main() {
-    // Força dark mode no Windows via propriedade do sistema
+    // Handler global: captura excecoes nao tratadas para evitar fechamento silencioso
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        try {
+            util.logToFile("FATAL", "Excecao nao tratada na thread '${thread.name}': ${throwable.message}")
+            util.logToFile("FATAL", "Stack trace: ${throwable.stackTraceToString().take(2000)}")
+        } catch (_: Exception) {
+            System.err.println("[FATAL] Excecao nao tratada: ${throwable.message}")
+            throwable.printStackTrace()
+        }
+    }
+
+    // Forca dark mode no Windows via propriedade do sistema
     System.setProperty("sun.java2d.noddraw", "true")
 
     val isViewer = config.DesktopConfig.isViewer

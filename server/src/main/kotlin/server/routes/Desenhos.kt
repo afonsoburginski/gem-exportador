@@ -172,7 +172,8 @@ val validFormats = setOf("pdf", "dwf", "dwg")
     // POST /api/desenhos/queue - adiciona arquivo LOCAL à fila (sem upload, mesmo servidor)
     post("/api/desenhos/queue") {
         val body = call.receive<QueueBody>()
-        
+        AppLog.info("[POST queue] recebido: ${body.nomeArquivo} (${body.computador})")
+
         if (body.nomeArquivo.isBlank() || body.computador.isBlank() || 
             body.caminhoDestino.isBlank() || body.arquivoOriginal.isBlank()) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse(
@@ -232,6 +233,67 @@ val validFormats = setOf("pdf", "dwf", "dwg")
             mensagem = "Arquivo adicionado à fila de processamento",
             caminhoDestino = body.caminhoDestino,
             formatosSolicitados = formatosValidados
+        ))
+    }
+
+    // POST /api/desenhos/queue/batch - adiciona ate 100 arquivos em uma unica requisicao (evita perda por limite de conexoes)
+    post("/api/desenhos/queue/batch") {
+        val body = call.receive<List<QueueBody>>()
+        val limit = body.take(100)
+        if (body.size > 100) AppLog.warn("[POST queue/batch] lista com ${body.size} itens; processando apenas os 100 primeiros")
+        val validFormats = setOf("pdf", "dwf", "dwg")
+        val ids = mutableListOf<String>()
+        val erros = mutableListOf<String>()
+        for (item in limit) {
+            try {
+                if (item.nomeArquivo.isBlank() || item.computador.isBlank() || item.caminhoDestino.isBlank() || item.arquivoOriginal.isBlank()) {
+                    erros.add("${item.nomeArquivo}: campos obrigatorios faltando")
+                    continue
+                }
+                val arquivoFile = File(item.arquivoOriginal)
+                if (!arquivoFile.exists()) {
+                    erros.add("${item.nomeArquivo}: arquivo nao encontrado")
+                    continue
+                }
+                val formatosValidados = item.formatos.map { it.trim().lowercase() }.filter { it in validFormats }
+                if (formatosValidados.isEmpty()) {
+                    erros.add("${item.nomeArquivo}: nenhum formato valido")
+                    continue
+                }
+                val id = UUID.randomUUID().toString()
+                val now = java.time.Instant.now().toString()
+                val pos = desenhoDao.countPendentesEProcessando() + 1
+                val pastaProcessamento = File(System.getProperty("user.dir"), "processados").resolve(id).apply { mkdirs() }
+                val desenho = DesenhoAutodesk(
+                    id = id,
+                    nomeArquivo = item.nomeArquivo,
+                    computador = item.computador,
+                    caminhoDestino = item.caminhoDestino,
+                    status = "pendente",
+                    posicaoFila = pos,
+                    horarioEnvio = now,
+                    horarioAtualizacao = now,
+                    formatosSolicitadosJson = """["${formatosValidados.joinToString("\",\"")}"]""",
+                    arquivoOriginal = item.arquivoOriginal,
+                    pastaProcessamento = pastaProcessamento.absolutePath,
+                    criadoEm = now,
+                    atualizadoEm = now
+                )
+                desenhoDao.insert(desenho)
+                queue.add(id)
+                broadcast.sendInsert(desenhoDao.getById(id)!!)
+                ids.add(id)
+                AppLog.info("[POST queue/batch] inserido: ${item.nomeArquivo} (${item.computador})")
+            } catch (e: Exception) {
+                AppLog.error("Erro ao inserir ${item.nomeArquivo} no batch: ${e.message}", e)
+                erros.add("${item.nomeArquivo}: ${e.message}")
+            }
+        }
+        AppLog.info("[POST queue/batch] concluido: ${ids.size} inseridos, ${erros.size} erros")
+        call.respond(io.ktor.http.HttpStatusCode.OK, mapOf(
+            "inseridos" to ids.size,
+            "ids" to ids,
+            "erros" to erros
         ))
     }
 

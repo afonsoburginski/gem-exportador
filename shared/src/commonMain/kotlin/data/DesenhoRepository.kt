@@ -96,11 +96,45 @@ class DesenhoRepository(
     }
     
     /**
-     * Insere ou atualiza múltiplos desenhos
+     * Insere ou atualiza multiplos desenhos.
+     * Protegido contra falhas: se a transacao em lote falhar, tenta um a um.
      */
     fun upsertAll(desenhos: List<DesenhoAutodesk>) {
-        database.transaction {
-            desenhos.forEach { upsert(it) }
+        try {
+            database.transaction {
+                desenhos.forEach { desenho ->
+                    queries.insert(
+                        id = desenho.id,
+                        nome_arquivo = desenho.nomeArquivo,
+                        computador = desenho.computador,
+                        caminho_destino = desenho.caminhoDestino,
+                        status = desenho.status,
+                        posicao_fila = desenho.posicaoFila,
+                        horario_envio = desenho.horarioEnvio,
+                        horario_atualizacao = desenho.horarioAtualizacao,
+                        formatos_solicitados = desenho.formatosSolicitadosJson,
+                        arquivo_original = desenho.arquivoOriginal,
+                        arquivos_processados = desenho.arquivosProcessadosJson,
+                        erro = desenho.erro,
+                        progresso = desenho.progresso,
+                        tentativas = desenho.tentativas,
+                        arquivos_enviados_para_usuario = desenho.arquivosEnviadosParaUsuario,
+                        cancelado_em = desenho.canceladoEm,
+                        criado_em = desenho.criadoEm ?: desenho.horarioEnvio,
+                        atualizado_em = desenho.atualizadoEm ?: desenho.horarioAtualizacao,
+                        pasta_processamento = desenho.pastaProcessamento
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            util.logToFile("ERROR", "upsertAll batch falhou (${desenhos.size} itens): ${e.message}; tentando um a um")
+            for (desenho in desenhos) {
+                try {
+                    upsert(desenho)
+                } catch (inner: Exception) {
+                    util.logToFile("ERROR", "upsert individual falhou para ${desenho.nomeArquivo}: ${inner.message}")
+                }
+            }
         }
     }
     
