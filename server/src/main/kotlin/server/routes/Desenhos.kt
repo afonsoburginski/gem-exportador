@@ -251,6 +251,7 @@ val validFormats = setOf("pdf", "dwf", "dwg")
         val validFormats = setOf("pdf", "dwf", "dwg")
         val ids = mutableListOf<String>()
         val erros = mutableListOf<String>()
+        val toEnqueue = mutableListOf<String>()
         synchronized(queuePositionLock) {
             for (item in limit) {
                 try {
@@ -288,15 +289,18 @@ val validFormats = setOf("pdf", "dwf", "dwg")
                         atualizadoEm = now
                     )
                     desenhoDao.insert(desenho)
-                    queue.add(id)
-                    broadcast.sendInsert(desenhoDao.getById(id)!!)
                     ids.add(id)
+                    toEnqueue.add(id)
                     AppLog.info("[POST queue/batch] inserido: ${item.nomeArquivo} (${item.computador})")
                 } catch (e: Exception) {
                     AppLog.error("Erro ao inserir ${item.nomeArquivo} no batch: ${e.message}", e)
                     erros.add("${item.nomeArquivo}: ${e.message}")
                 }
             }
+        }
+        for (id in toEnqueue) {
+            queue.add(id)
+            desenhoDao.getById(id)?.let { broadcast.sendInsert(it) }
         }
         AppLog.info("[POST queue/batch] concluido: ${ids.size} inseridos, ${erros.size} erros")
         call.respond(io.ktor.http.HttpStatusCode.OK, mapOf(
